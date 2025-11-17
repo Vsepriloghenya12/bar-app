@@ -1,15 +1,20 @@
-# --- Dockerfile ---
 FROM node:20-slim
 
 WORKDIR /app
 
-# Устанавливаем зависимости
-COPY backend/package*.json ./
+# Копим только манифесты
+COPY backend/package*.json ./backend/
+
+WORKDIR /app/backend
 RUN npm install --omit=dev
 
-# Копируем бэкенд и фронтенд
-COPY backend/. .
-COPY public ./public
+WORKDIR /app
 
-EXPOSE 8080
-CMD ["npm", "start"]
+# Копируем весь проект
+COPY . .
+
+# Railway передаёт порт через $PORT
+ENV PORT=8080
+
+WORKDIR /app/backend
+CMD ["node", "server.cjs"]

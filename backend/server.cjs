@@ -33,17 +33,24 @@ app.use(cors({
 }));
 app.options('*', cors());
 
-// === Отдача статических файлов Mini App ===
+/* ===== Статика Mini App (ТОЛЬКО backend/public) ===== */
 const publicDir = path.join(__dirname, 'public');
 
-// Для Railway: статика лежит в backend/public
 app.use(express.static(publicDir));
 
-// Если путь не найден среди API — отдать index.html
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api')) return next();
+app.get('/', (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
+
+app.get(['/admin', '/admin.html'], (_req, res) => {
+  res.sendFile(path.join(publicDir, 'admin.html'));
+});
+
+app.get(['/staff', '/staff.html'], (_req, res) => {
+  res.sendFile(path.join(publicDir, 'staff.html'));
+});
+
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
 /* ================== DB bootstrap ================== */
 let db;
@@ -91,7 +98,7 @@ async function loadDb() {
 
     CREATE TABLE IF NOT EXISTS requisitions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT,                    -- в старых БД может быть created_by
+      user_id TEXT,
       status TEXT NOT NULL DEFAULT 'created',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -393,7 +400,7 @@ function registerCatalogRoutes(app) {
     } catch (e) { res.status(400).json({ ok: false, error: String(e.message || e) }); }
   });
 
-  // Публичный список для формы сотрудника (добавили supplier_id и supplier_name)
+  // Публичный список для формы сотрудника
   app.get('/api/products', authMiddleware, (_req, res) => {
     try {
       const rows = db.prepare(`
@@ -447,7 +454,6 @@ function registerRequisitionRoutes(app) {
         insOrderItem.run(orderId, prod.id, q, q);
       }
 
-      // статус в БД оставляем, но больше нигде не показываем
       db.prepare("UPDATE requisitions SET status = 'processed' WHERE id=?").run(reqId);
       return reqId;
     });
@@ -464,7 +470,7 @@ function registerRequisitionRoutes(app) {
     }
   });
 
-  // Список заявок для админа (без отображения статусов)
+  // Список заявок для админа
   app.get('/api/admin/requisitions', authMiddleware, adminOnly, (_req, res) => {
     try {
       const col = REQ_USER_COL;
@@ -479,7 +485,7 @@ function registerRequisitionRoutes(app) {
     } catch (e) { res.status(500).json({ ok: false, error: String(e.message || e) }); }
   });
 
-  // Детали заявки (возвращаем состав без статусов)
+  // Детали заявки
   app.get('/api/admin/requisitions/:id', authMiddleware, adminOnly, (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -506,19 +512,12 @@ function registerRequisitionRoutes(app) {
   });
 }
 
-/* ================== Misc & static ================== */
+/* ================== Misc ================== */
 app.get('/api/me', (req, res, next) => authMiddleware(req, res, () => {
   res.json({ ok: true, user: { id: req.user.tg_user_id, name: req.user.name, role: req.user.role } });
 }));
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
-
-const pathFrontend = path.resolve(__dirname, '../public');
-app.use(express.static(path.join(__dirname, "../public")));
-app.get(['/admin', '/admin.html'], (_req, res) => res.sendFile(path.join(pathFrontend, 'admin.html')));
-app.get(['/staff', '/staff.html'], (_req, res) => res.sendFile(path.join(pathFrontend, 'staff.html')));
-app.get('/', (_req, res) => res.sendFile(path.join(pathFrontend, 'index.html')));
-app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
 /* ================== Start ================== */
 (async function start() {
