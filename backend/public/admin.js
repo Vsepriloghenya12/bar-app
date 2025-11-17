@@ -1,5 +1,5 @@
 /* ============================================
-   ADMIN PANEL — FULL WORKING VERSION
+   ADMIN PANEL — FULL WORKING VERSION (FINAL)
    ============================================ */
 
 /* === Telegram InitData === */
@@ -38,7 +38,7 @@ async function loadSuppliers() {
 
     div.innerHTML = `
       <div class="accordion-header" onclick="toggleAccordion(this)">
-        <span>${s.name}</span>
+        <span>${s.name} <span style="color:#888;font-size:11px;">(ID: ${s.id})</span></span>
         <span class="arrow">▶</span>
       </div>
 
@@ -132,7 +132,7 @@ async function loadCategories() {
   o2.textContent = "— новая категория —";
   sel.appendChild(o2);
 
-  // по умолчанию, если нет категорий — выберется "__new"
+  // если категорий нет — сразу выбираем новую
   if (!r.categories.length) {
     sel.value = "__new";
   }
@@ -217,10 +217,10 @@ async function addProduct() {
     const sel = document.getElementById("prod-category");
     const custom = document.getElementById("prod-category-new").value.trim();
 
-    // если пользователь ввёл текст — всегда используем его
+    // если введена новая категория → используй её
     if (custom) return custom;
 
-    // иначе пытаемся взять выбранное значение из селекта
+    // иначе выбери из списка
     if (sel && sel.value && sel.value !== "__new") return sel.value;
 
     return "";
@@ -287,25 +287,46 @@ async function deleteProduct(id) {
   loadCategories();
 }
 
-async function editAlt(id) {
-  const sid = prompt("ID альтернативного поставщика:");
-  if (!sid) return;
+/* =====================================================
+   ALT SUPPLIERS (NEW LOGIC)
+   ===================================================== */
 
-  const r = await API(`/api/admin/products/${id}/alternatives`, 'POST', {
-    supplier_id: Number(sid)
+async function editAlt(productId) {
+  const name = prompt("Введите НАЗВАНИЕ поставщика:");
+
+  if (!name) return;
+
+  // загружаем всех поставщиков
+  const suppliers = await API('/api/admin/suppliers');
+  if (!suppliers.ok) return alert("Ошибка загрузки поставщиков");
+
+  // ищем по названию
+  const supplier = suppliers.suppliers.find(
+    s => s.name.toLowerCase() === name.trim().toLowerCase()
+  );
+
+  if (!supplier) {
+    return alert("Поставщик не найден!");
+  }
+
+  // создаём альтернативу
+  const r = await API(`/api/admin/products/${productId}/alternatives`, 'POST', {
+    supplier_id: supplier.id
   });
 
   if (!r.ok) return alert(r.error);
 
-  alert("Добавлено!");
+  alert(`Добавлен альтернативный поставщик: ${supplier.name}`);
 }
 
 
 /* =====================================================
-   ACCORDION
+   ACCORDION (fixed)
    ===================================================== */
 
 function toggleAccordion(el) {
+  if (!el.classList.contains("accordion-header")) return;
+
   const body = el.nextElementSibling;
   const arrow = el.querySelector('.arrow');
 
