@@ -110,11 +110,15 @@ async function deleteSupplier(id) {
 
 async function loadCategories() {
   const r = await API('/api/admin/categories');
-  if (!r.ok) return console.warn("loadCategories:", r.error);
+  if (!r.ok) {
+    console.warn("loadCategories:", r.error);
+    return;
+  }
 
   const sel = document.getElementById("prod-category");
   sel.innerHTML = "";
 
+  // существующие категории
   r.categories.forEach(cat => {
     const o = document.createElement("option");
     o.value = cat;
@@ -122,10 +126,16 @@ async function loadCategories() {
     sel.appendChild(o);
   });
 
+  // пункт "новая категория"
   const o2 = document.createElement("option");
   o2.value = "__new";
   o2.textContent = "— новая категория —";
   sel.appendChild(o2);
+
+  // по умолчанию, если нет категорий — выберется "__new"
+  if (!r.categories.length) {
+    sel.value = "__new";
+  }
 }
 
 
@@ -186,7 +196,7 @@ async function loadProducts() {
 
 async function loadProductFormSuppliers() {
   const r = await API('/api/admin/suppliers');
-  if (!r.ok) return;
+  if (!r.ok) return console.warn("loadProductFormSuppliers:", r.error);
 
   const sel = document.getElementById("prod-supplier");
   sel.innerHTML = "";
@@ -206,8 +216,14 @@ async function addProduct() {
   const category = (() => {
     const sel = document.getElementById("prod-category");
     const custom = document.getElementById("prod-category-new").value.trim();
-    if (sel.value === "__new" && custom) return custom;
-    return sel.value;
+
+    // если пользователь ввёл текст — всегда используем его
+    if (custom) return custom;
+
+    // иначе пытаемся взять выбранное значение из селекта
+    if (sel && sel.value && sel.value !== "__new") return sel.value;
+
+    return "";
   })();
 
   const supplier_id = Number(document.getElementById("prod-supplier").value);
@@ -215,6 +231,7 @@ async function addProduct() {
   if (!name) return alert("Введите название");
   if (!unit) return alert("Введите ед. изм.");
   if (!category) return alert("Категория обязательна");
+  if (!supplier_id) return alert("Выберите поставщика");
 
   const r = await API('/api/admin/products', 'POST', {
     name,
