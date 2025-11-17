@@ -412,6 +412,21 @@ app.delete('/api/admin/suppliers/:id', auth, admin, (req,res)=>{
     res.status(400).json({ ok:false, error:"Ошибка удаления" });
   }
 });
+/* =====================================================
+   CATEGORIES (NEW)
+   ===================================================== */
+
+app.get('/api/admin/categories', auth, admin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT DISTINCT category
+    FROM products
+    WHERE category IS NOT NULL AND category <> ''
+    ORDER BY category
+  `).all();
+
+  res.json({ ok: true, categories: rows.map(r => r.category) });
+});
+
 
 /* -------------------------------------------------- */
 /* PRODUCTS API */
