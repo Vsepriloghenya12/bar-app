@@ -3,43 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Админ — Управление</title>
-
+  <title>Админ — Заявки</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 
 <body>
-  <div class="container">
+<div class="container">
+  
+  <h1>Поставщики</h1>
 
-    <h1>Поставщики</h1>
+  <!-- Add supplier -->
+  <div class="card">
+    <h3>Добавить поставщика</h3>
+    <input id="sup-name" placeholder="Название">
+    <input id="sup-note" placeholder="Контакты / заметка">
 
-    <div class="card">
-      <h3>Добавить поставщика</h3>
-      <input id="sup_name" type="text" placeholder="Название поставщика">
-      <input id="sup_note" type="text" placeholder="Примечание">
-      <button id="sup_add">Добавить</button>
-    </div>
-
-    <div id="suppliers"></div>
-
-    <hr>
-
-    <h1>Товары</h1>
-
-    <div class="card">
-      <h3>Добавить товар</h3>
-      <input id="p_name" type="text" placeholder="Название товара">
-      <input id="p_unit" type="text" placeholder="Единица измерения">
-      <input id="p_cat" type="text" placeholder="Категория (Общее)">
-      <input id="p_sup" type="number" placeholder="ID основного поставщика">
-      <button id="p_add">Добавить</button>
-    </div>
-
-    <div id="products_grouped"></div>
-
+    <button onclick="addSupplier()">Добавить</button>
   </div>
 
-  <script src="./admin.js"></script>
+  <div id="suppliers"></div>
+
+  <hr style="opacity:0.2;margin:12px 0;">
+
+  <h1>Товары</h1>
+
+  <!-- Add product -->
+  <div class="card">
+    <h3>Добавить товар</h3>
+
+    <input id="prod-name" placeholder="Название товара">
+    <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
+    
+    <label>Категория:</label>
+    <select id="prod-category"></select>
+    <input id="prod-category-new" placeholder="Новая категория (если нет в списке)">
+
+    <label>Основной поставщик:</label>
+    <select id="prod-supplier"></select>
+
+    <button onclick="addProduct()">Добавить товар</button>
+  </div>
+
+  <div id="products"></div>
+
+</div>
+
+<script src="./admin.js"></script>
 </body>
 </html>

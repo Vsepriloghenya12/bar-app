@@ -1,200 +1,292 @@
-const API = location.origin;
-const $ = s => document.querySelector(s);
+/* ========= ADMIN PANEL SCRIPT ========= */
 
-function getInit(){
-  return new URLSearchParams(location.search).get("initData") || "";
-}
+const API = (url, method='GET', data=null) =>
+  fetch(url, {
+    method,
+    headers: { "Content-Type":"application/json" },
+    body: data ? JSON.stringify(data) : null,
+  }).then(r => r.json());
 
-async function api(url, method="GET", data=null){
-  const headers = {
-    "Content-Type":"application/json",
-    "X-TG-INIT-DATA": getInit()
-  };
-  const opt = { method, headers };
-  if (data) opt.body = JSON.stringify(data);
+/* ========= LOAD SUPPLIERS ========= */
 
-  const r = await fetch(url,opt);
-  const j = await r.json().catch(()=>null);
+async function loadSuppliers() {
+  const r = await API('/api/admin/suppliers');
+  if (!r.ok) return;
 
-  if (!r.ok || !j?.ok) throw new Error(j?.error||"Ошибка");
-  return j;
-}
+  const box = document.getElementById('suppliers');
+  box.innerHTML = "";
 
-/* =========================================================================
-   SUPPLIERS
-   ========================================================================= */
+  r.suppliers.forEach(s => {
+    const div = document.createElement("div");
+    div.className = "card";
 
-async function loadSuppliers(){
-  const box = $("#suppliers");
-  box.innerHTML = "Загрузка...";
-
-  const { suppliers } = await api("/api/admin/suppliers");
-
-  box.innerHTML = suppliers.map(s => `
-    <div class="card">
-      <b>${s.id}</b> — ${s.name}<br>
-      Примечание: ${s.contact_note || "-"}<br>
-      Статус: ${s.active ? "Активен" : "Не активен"}<br>
-
-      <div class="actions-row">
-        <button onclick="editSupplier(${s.id})">Ред</button>
-        <button onclick="deleteSupplier(${s.id})">Удалить</button>
+    div.innerHTML = `
+      <div class="accordion-header" onclick="toggleAccordion(this)">
+        <span>${s.name}</span>
+        <span class="arrow">▶</span>
       </div>
-    </div>
-  `).join("");
+
+      <div class="accordion-body" style="display:none">
+        <div><b>Контакт:</b> ${s.contact_note || '—'}</div>
+        <div class="actions-row">
+          <button onclick="editSupplier(${s.id})">Ред.</button>
+          <button onclick="deleteSupplier(${s.id})">Удал</button>
+        </div>
+      </div>
+    `;
+
+    box.appendChild(div);
+  });
 }
 
-$("#sup_add").onclick = async () => {
-  const name = $("#sup_name").value.trim();
-  const note = $("#sup_note").value.trim();
+/* ========= ADD SUPPLIER ========= */
+async function addSupplier() {
+  const name = document.getElementById("sup-name").value.trim();
+  const note = document.getElementById("sup-note").value.trim();
+
   if (!name) return alert("Введите название");
 
-  await api("/api/admin/suppliers","POST",{name,contact_note:note});
-
-  $("#sup_name").value="";
-  $("#sup_note").value="";
-  loadSuppliers();
-};
-
-async function editSupplier(id){
-  const name = prompt("Название:") || "";
-  const note = prompt("Примечание:") || "";
-  const active = confirm("Активен?") ? 1 : 0;
-
-  await api(`/api/admin/suppliers/${id}`,"PATCH",{name,contact_note:note,active});
-  loadSuppliers();
-}
-
-async function deleteSupplier(id){
-  if (!confirm("Удалить поставщика?")) return;
-  await api(`/api/admin/suppliers/${id}`,"DELETE");
-  loadSuppliers();
-}
-
-/* =========================================================================
-   PRODUCTS — GROUPED BY SUPPLIER WITH ACCORDION
-   ========================================================================= */
-
-async function loadProducts(){
-  const container = $("#products_grouped");
-  container.innerHTML = "Загрузка...";
-
-  const { products } = await api("/api/admin/products");
-
-  // группируем по поставщику
-  const groups = {};
-  products.forEach(p=>{
-    if (!groups[p.supplier_id]) groups[p.supplier_id] = {
-      supplier_name: p.supplier_name,
-      items: []
-    };
-    groups[p.supplier_id].items.push(p);
+  const r = await API('/api/admin/suppliers', 'POST', {
+    name,
+    contact_note: note
   });
 
-  // рендер
-  container.innerHTML = Object.entries(groups).map(([sid, group]) => `
-    <div class="card">
-      <div class="accordion-header" onclick="toggleAcc(${sid})">
-        <b>${group.supplier_name}</b>
-        <span id="arrow_${sid}" class="arrow">▼</span>
-      </div>
+  if (!r.ok) return alert(r.error);
 
-      <div id="acc_${sid}" class="accordion-body">
-        ${group.items.map(p => `
-          <div class="card" style="margin-bottom:14px;">
-            <b>${p.id}</b> — ${p.name}<br>
-            ${p.unit}, ${p.category}<br>
+  document.getElementById("sup-name").value = "";
+  document.getElementById("sup-note").value = "";
 
-            <div class="actions-row">
-              <button onclick="editProduct(${p.id})">Ред</button>
-              <button onclick="deleteProduct(${p.id})">Удалить</button>
-              <button onclick="editAlts(${p.id})">Alt</button>
-            </div>
-          </div>
-        `).join("")}
-      </div>
-
-    </div>
-  `).join("");
+  loadSuppliers();
+  loadProductFormSuppliers();
 }
 
-/* ==== Аккордеон ==== */
+/* ========= EDIT SUPPLIER ========= */
+async function editSupplier(id) {
+  const name = prompt("Новое название:");
+  if (!name) return;
 
-window.toggleAcc = function(id){
-  const body = document.getElementById("acc_"+id);
-  const arrow = document.getElementById("arrow_"+id);
+  const note = prompt("Новая заметка (или Enter):", "");
 
-  if (body.style.display === "none"){
+  const r = await API(`/api/admin/suppliers/${id}`, 'PATCH', {
+    name,
+    contact_note: note
+  });
+
+  if (!r.ok) return alert(r.error);
+
+  loadSuppliers();
+  loadProductFormSuppliers();
+}
+
+/* ========= DELETE SUPPLIER ========= */
+async function deleteSupplier(id) {
+  if (!confirm("Удалить поставщика?")) return;
+
+  const r = await API(`/api/admin/suppliers/${id}`, 'DELETE');
+  if (!r.ok) return alert(r.error);
+
+  loadSuppliers();
+  loadProductFormSuppliers();
+}
+
+
+/* ===========================================================
+   CATEGORIES
+   =========================================================== */
+
+async function loadCategories() {
+  const r = await API('/api/admin/categories');
+  if (!r.ok) return;
+
+  const sel = document.getElementById("prod-category");
+  sel.innerHTML = "";
+
+  r.categories.forEach(cat => {
+    const o = document.createElement("option");
+    o.value = cat;
+    o.textContent = cat;
+    sel.appendChild(o);
+  });
+
+  const o2 = document.createElement("option");
+  o2.value = "__new";
+  o2.textContent = "— новая категория —";
+  sel.appendChild(o2);
+}
+
+
+/* ===========================================================
+   PRODUCTS
+   =========================================================== */
+
+async function loadProducts() {
+  const r = await API('/api/admin/products');
+  if (!r.ok) return;
+
+  const box = document.getElementById('products');
+  box.innerHTML = "";
+
+  // группируем по категориям → поставщикам
+  const groups = {};
+  r.products.forEach(p => {
+    if (!groups[p.category]) groups[p.category] = [];
+    groups[p.category].push(p);
+  });
+
+  Object.entries(groups).forEach(([category, items]) => {
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+
+    wrap.innerHTML = `
+      <div class="accordion-header" onclick="toggleAccordion(this)">
+        <span><b>${category}</b></span>
+        <span class="arrow">▶</span>
+      </div>
+      <div class="accordion-body" style="display:none"></div>
+    `;
+
+    const body = wrap.querySelector('.accordion-body');
+
+    items.forEach(p => {
+      const block = document.createElement("div");
+      block.className = "card";
+
+      block.innerHTML = `
+        <div><b>${p.name}</b> (${p.unit})</div>
+        <div style="margin-top:4px;color:#aaa;font-size:12px;">
+          Поставщик: ${p.supplier_name}
+        </div>
+
+        <div class="actions-row">
+          <button onclick="editProduct(${p.id})">Ред</button>
+          <button onclick="deleteProduct(${p.id})">Удал</button>
+          <button onclick="editAlt(${p.id})">Alt</button>
+        </div>
+      `;
+
+      body.appendChild(block);
+    });
+
+    box.appendChild(wrap);
+  });
+}
+
+/* ========= PRODUCT FORM SUPPLIER SELECT ========= */
+async function loadProductFormSuppliers() {
+  const r = await API('/api/admin/suppliers');
+  if (!r.ok) return;
+
+  const sel = document.getElementById("prod-supplier");
+  sel.innerHTML = "";
+
+  r.suppliers.forEach(s => {
+    const o = document.createElement("option");
+    o.value = s.id;
+    o.textContent = s.name;
+    sel.appendChild(o);
+  });
+}
+
+/* ========= ADD PRODUCT ========= */
+async function addProduct() {
+  const name = document.getElementById("prod-name").value.trim();
+  const unit = document.getElementById("prod-unit").value.trim();
+
+  const category = (() => {
+    const sel = document.getElementById("prod-category");
+    const custom = document.getElementById("prod-category-new").value.trim();
+    if (sel.value === "__new" && custom) return custom;
+    return sel.value;
+  })();
+
+  const supplier_id = Number(document.getElementById("prod-supplier").value);
+
+  if (!name) return alert("Введите название");
+  if (!unit) return alert("Введите ед. изм.");
+
+  const r = await API('/api/admin/products', 'POST', {
+    name, unit, category, supplier_id
+  });
+
+  if (!r.ok) return alert(r.error);
+
+  document.getElementById("prod-name").value = "";
+  document.getElementById("prod-unit").value = "";
+  document.getElementById("prod-category-new").value = "";
+
+  loadProducts();
+  loadCategories();
+}
+
+/* ========= EDIT PRODUCT ========= */
+async function editProduct(id) {
+  const name = prompt("Название:");
+  if (!name) return;
+
+  const unit = prompt("Ед. изм.:");
+  if (!unit) return;
+
+  const category = prompt("Категория:");
+  if (!category) return;
+
+  const supplier = prompt("ID основного поставщика:");
+  if (!supplier) return;
+
+  const r = await API(`/api/admin/products/${id}`, 'PATCH', {
+    name,
+    unit,
+    category,
+    supplier_id: Number(supplier)
+  });
+
+  if (!r.ok) return alert(r.error);
+
+  loadProducts();
+  loadCategories();
+  loadProductFormSuppliers();
+}
+
+/* ========= DELETE PRODUCT ========= */
+async function deleteProduct(id) {
+  if (!confirm("Удалить товар?")) return;
+
+  const r = await API(`/api/admin/products/${id}`, 'DELETE');
+  if (!r.ok) return alert(r.error);
+
+  loadProducts();
+  loadCategories();
+}
+
+/* ========= ALT SUPPLIERS ========= */
+async function editAlt(id) {
+  const sid = prompt("ID альтернативного поставщика:");
+  if (!sid) return;
+
+  const r = await API(`/api/admin/products/${id}/alternatives`, 'POST', {
+    supplier_id: Number(sid)
+  });
+
+  if (!r.ok) return alert(r.error);
+
+  alert("Добавлено!");
+}
+
+/* ========= Accordion ========= */
+function toggleAccordion(el) {
+  const body = el.nextElementSibling;
+  const arrow = el.querySelector(".arrow");
+
+  if (body.style.display === "none") {
     body.style.display = "block";
     arrow.textContent = "▼";
   } else {
     body.style.display = "none";
     arrow.textContent = "▶";
   }
-};
-
-/* ==== CRUD товаров ==== */
-
-$("#p_add").onclick = async () => {
-  const name = $("#p_name").value.trim();
-  const unit = $("#p_unit").value.trim();
-  const category = $("#p_cat").value.trim() || "Общее";
-  const supplier_id = Number($("#p_sup").value);
-
-  if (!name || !unit || !supplier_id) return alert("Заполните все поля");
-
-  await api("/api/admin/products","POST",{name,unit,category,supplier_id});
-
-  $("#p_name").value="";
-  $("#p_unit").value="";
-  $("#p_cat").value="";
-  $("#p_sup").value="";
-
-  loadProducts();
-};
-
-async function editProduct(id){
-  const name = prompt("Название:") || "";
-  const unit = prompt("Ед. изм:") || "";
-  const category = prompt("Категория:","Общее") || "Общее";
-  const supplier_id = Number(prompt("ID поставщика:"));
-  const active = confirm("Активен?") ? 1 : 0;
-
-  await api(`/api/admin/products/${id}`,"PATCH",
-    {name,unit,category,supplier_id,active}
-  );
-
-  loadProducts();
 }
 
-async function deleteProduct(id){
-  if (!confirm("Удалить товар?")) return;
-  await api(`/api/admin/products/${id}`,"DELETE");
-  loadProducts();
-}
-
-async function editAlts(pid){
-  const { alternatives } = await api(`/api/admin/products/${pid}/alternatives`);
-
-  const list = alternatives.map(a=>`${a.supplier_id} — ${a.name}`).join("\n");
-
-  const choice = prompt(
-    `Альтернативные:\n${list}\n\n` +
-    `Введите ID чтобы добавить\n` +
-    `-ID чтобы удалить`
-  );
-
-  if (!choice) return;
-
-  if (choice.startsWith("-")){
-    await api(`/api/admin/products/${pid}/alternatives/${Number(choice.slice(1))}`,"DELETE");
-  } else {
-    await api(`/api/admin/products/${pid}/alternatives`,"POST",{supplier_id:Number(choice)});
-  }
-
-  alert("Готово");
-}
-
-/* INIT */
+/* ========= INIT ========= */
 loadSuppliers();
+loadProductFormSuppliers();
+loadCategories();
 loadProducts();

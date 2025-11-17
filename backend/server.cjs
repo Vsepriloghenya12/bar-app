@@ -514,6 +514,26 @@ app.delete('/api/admin/products/:id', auth, admin, (req,res)=>{
     res.status(400).json({ ok:false, error:"Ошибка удаления" });
   }
 });
+async function loadCategories() {
+  const r = await api('/api/admin/categories');
+  if (!r.ok) return;
+
+  const sel = document.getElementById('product-category');
+  sel.innerHTML = "";
+
+  r.categories.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  });
+
+  // Добавляем пункт "Новая категория"
+  const optNew = document.createElement('option');
+  optNew.value = "__new";
+  optNew.textContent = "— новая категория —";
+  sel.appendChild(optNew);
+}
 
 /* -------------------------------------------------- */
 /* PRODUCT ALTERNATIVES */
