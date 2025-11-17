@@ -18,42 +18,38 @@ dns.setDefaultResultOrder?.('ipv4first');
 dotenv.config({ override: true });
 
 const app = express();
+
+/* ---------------- SECURITY / BASIC ------------------ */
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
 }));
+
 app.use(compression());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
+
+/* --------------------- CORS FIX ---------------------- */
 app.use(cors({
-  origin: (_o, cb) => cb(null, true),
+  origin: '*',
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-TG-INIT-DATA'],
-  maxAge: 86400
+  exposedHeaders: ['Content-Type'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
-app.options('*', cors());
 
-/* ===== Статика Mini App ===== */
-const publicDir = path.join(__dirname, 'public');
-
-app.use(express.static(publicDir));
-
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(publicDir, 'index.html'));
+app.options('*', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TG-INIT-DATA');
+  res.status(204).end();
 });
 
-app.get(['/admin', '/admin.html'], (_req, res) => {
-  res.sendFile(path.join(publicDir, 'admin.html'));
-});
+/* ===================================================== */
+/* ================ DATABASE BOOTSTRAP ================== */
+/* ===================================================== */
 
-app.get(['/staff', '/staff.html'], (_req, res) => {
-  res.sendFile(path.join(publicDir, 'staff.html'));
-});
-
-app.get('/favicon.ico', (_req, res) => res.status(204).end());
-
-
-/* ================== DB bootstrap ================== */
 let db;
 let migrate = () => {};
 
@@ -148,7 +144,10 @@ async function loadDb() {
   `);
 }
 
-/* ===== schema guard ===== */
+/* ===================================================== */
+/* ==================== SCHEMA FIX ===================== */
+/* ===================================================== */
+
 let REQ_USER_COL = 'user_id';
 function ensureSchema() {
   const cols = db.prepare(`PRAGMA table_info('requisitions')`).all();
@@ -160,68 +159,12 @@ function ensureSchema() {
     REQ_USER_COL = 'user_id';
   } else if (hasCreatedBy) {
     REQ_USER_COL = 'created_by';
-  } else {
-    REQ_USER_COL = 'user_id';
   }
 }
 
-
-/* ================== Telegram notify ================== */
-async function sendTelegram(text) {
-  const token = process.env.BOT_TOKEN;
-  const idsStr = process.env.ADMIN_TG_IDS;
-  if (!token || !idsStr) return;
-
-  const ids = idsStr.split(',').map(s => s.trim()).filter(Boolean);
-
-  for (const chatId of ids) {
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true
-        })
-      });
-      await res.json().catch(() => ({}));
-    } catch {}
-  }
-}
-
-function buildRequisitionMessage(reqId, userName) {
-  const head = db.prepare(`SELECT r.id, r.created_at FROM requisitions r WHERE r.id = ?`).get(reqId);
-  const orders = db.prepare(`
-    SELECT o.id AS order_id, s.name AS supplier_name
-    FROM orders o JOIN suppliers s ON s.id = o.supplier_id
-    WHERE o.requisition_id = ? ORDER BY s.name
-  `).all(reqId);
-
-  const itemsStmt = db.prepare(`
-    SELECT p.name AS product_name, p.unit, oi.qty_requested
-    FROM order_items oi JOIN products p ON p.id = oi.product_id
-    WHERE oi.order_id = ? ORDER BY p.name
-  `);
-
-  let text =
-    `🧾 <b>Заявка #${reqId}</b> от ${userName || 'сотрудника'}\n` +
-    `Дата: ${head?.created_at || ''}\n\n`;
-
-  for (const o of orders) {
-    text += `🛒 <b>${o.supplier_name}</b>\n`;
-    const items = itemsStmt.all(o.order_id);
-    for (const it of items)
-      text += ` • ${it.product_name} — ${it.qty_requested} ${it.unit || ''}\n`;
-    text += '\n';
-  }
-
-  return text.trim();
-}
-
-
-/* ================== Auth ================== */
+/* ===================================================== */
+/* ==================== AUTH / TG ====================== */
+/* ===================================================== */
 
 const DEV_ALLOW_UNSAFE = String(process.env.DEV_ALLOW_UNSAFE || '').toLowerCase() === 'true';
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
@@ -246,37 +189,27 @@ function verifyTelegramInitData(initData, botToken) {
     const pairs = [];
     params.forEach((v, k) => { if (k !== 'hash') pairs.push(`${k}=${v}`); });
     pairs.sort();
-    const dataCheckString = pairs.join('\n');
 
-    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
-    const calcHash = crypto.createHmac('sha256', secretKey)
-      .update(dataCheckString)
-      .digest('hex');
+    const check = pairs.join('\n');
+    const key = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const calc = crypto.createHmac('sha256', key).update(check).digest('hex');
 
-    if (calcHash !== hash) return { ok: false, error: 'Bad hash' };
+    if (calc !== hash) return { ok: false, error: 'Bad hash' };
 
-    const user = params.get('user') ? JSON.parse(params.get('user')) : null;
-    return { ok: true, user };
+    return { ok: true, user: params.get('user') ? JSON.parse(params.get('user')) : null };
+
   } catch {
     return { ok: false, error: 'Invalid initData' };
   }
 }
 
 function pickInitData(req) {
-  let initData =
+  return (
     req.header('X-TG-INIT-DATA') ||
-    (typeof req.body?.initData === 'string' ? req.body.initData : '') ||
-    (typeof req.query?.__tg === 'string' ? req.query.__tg : '') ||
-    (typeof req.query?.initData === 'string' ? req.query.initData : '');
-
-  if (!initData) return '';
-
-  try {
-    const maybe = decodeURIComponent(initData);
-    if (maybe.includes('=') && maybe.includes('hash=')) initData = maybe;
-  } catch {}
-
-  return initData;
+    req.body?.initData ||
+    req.query?.initData ||
+    ''
+  );
 }
 
 function verifyInitData(req) {
@@ -290,19 +223,7 @@ function verifyInitData(req) {
   if (!initData)
     return { ok: false, error: 'Missing initData' };
 
-  const v = verifyTelegramInitData(initData, BOT_TOKEN);
-  if (!v.ok)
-    return v;
-
-  const userId = String(v.user?.id || '');
-  const fullName =
-    [v.user?.first_name, v.user?.last_name]
-      .filter(Boolean)
-      .join(' ')
-    || v.user?.username
-    || '';
-
-  return { ok: true, user: { id: userId, name: fullName } };
+  return verifyTelegramInitData(initData, BOT_TOKEN);
 }
 
 function authMiddleware(req, res, next) {
@@ -310,30 +231,26 @@ function authMiddleware(req, res, next) {
   if (!v.ok)
     return res.status(401).json({ ok: false, error: v.error });
 
-  const admins = String(process.env.ADMIN_TG_IDS || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
+  const admins = String(process.env.ADMIN_TG_IDS || '').split(',').map(s => s.trim());
+  const role = admins.includes(String(v.user.id)) ? 'admin' : 'staff';
 
-  const role = admins.includes(v.user.id) ? 'admin' : 'staff';
-
-  req.user = ensureUser(v.user.id, v.user.name, role);
+  req.user = ensureUser(String(v.user.id), v.user.first_name || '', role);
   next();
 }
 
 function adminOnly(req, res, next) {
   if (req.user?.role !== 'admin')
     return res.status(403).json({ ok: false, error: 'admin only' });
-
   next();
 }
 
-
-/* ================== Catalog Routes ================== */
+/* ===================================================== */
+/* ==================== CATALOG API ==================== */
+/* ===================================================== */
 
 function registerCatalogRoutes(app) {
 
-  /* ==== SUPPLIERS ==== */
+  /* -------- SUPPLIERS ---------- */
 
   app.get('/api/admin/suppliers', authMiddleware, adminOnly, (_req, res) => {
     try {
@@ -343,13 +260,13 @@ function registerCatalogRoutes(app) {
       `).all();
       res.json({ ok: true, suppliers: rows });
     } catch (e) {
-      res.status(500).json({ ok: false, error: String(e.message || e) });
+      res.status(500).json({ ok:false, error:String(e.message) });
     }
   });
 
   app.post('/api/admin/suppliers', authMiddleware, adminOnly, (req, res) => {
     try {
-      const { name, contact_note = '' } = req.body || {};
+      const { name, contact_note='' } = req.body || {};
       if (!name || name.trim().length < 2)
         throw new Error('Название поставщика слишком короткое');
 
@@ -358,101 +275,77 @@ function registerCatalogRoutes(app) {
         VALUES (?,?,1)
       `).run(name.trim(), contact_note);
 
-      const row = db.prepare(`SELECT * FROM suppliers WHERE id=?`)
-        .get(r.lastInsertRowid);
-
+      const row = db.prepare(`SELECT * FROM suppliers WHERE id=?`).get(r.lastInsertRowid);
       res.json({ ok: true, supplier: row });
 
     } catch (e) {
-      const msg = String(e.message || e);
-      res.status(/UNIQUE/i.test(msg) ? 409 : 400)
-        .json({ ok: false, error: msg });
+      res.status(400).json({ ok:false, error:String(e.message) });
     }
   });
 
-  /* === PATCH supplier === */
   app.patch('/api/admin/suppliers/:id', authMiddleware, adminOnly, (req, res) => {
     try {
       const sid = Number(req.params.id);
-      if (!Number.isFinite(sid))
-        return res.status(400).json({ ok: false, error: 'bad id' });
+      if (!Number.isFinite(sid)) throw new Error('bad id');
 
       const sup = db.prepare('SELECT * FROM suppliers WHERE id=?').get(sid);
-      if (!sup)
-        return res.status(404).json({ ok: false, error: 'not found' });
+      if (!sup) throw new Error('not found');
 
       const { name, contact_note, active } = req.body || {};
 
-      const newName = name !== undefined ? name.trim() : sup.name;
+      const newName = name != null ? name.trim() : sup.name;
       if (newName.length < 2) throw new Error('Название слишком короткое');
 
-      const newNote = contact_note !== undefined ? contact_note : sup.contact_note;
-      const newActive = active !== undefined ? (active ? 1 : 0) : sup.active;
+      const newNote = contact_note != null ? contact_note : sup.contact_note;
+      const newActive = active != null ? (active ? 1 : 0) : sup.active;
 
       db.prepare(`
-        UPDATE suppliers
-        SET name=?, contact_note=?, active=?
-        WHERE id=?
+        UPDATE suppliers SET name=?, contact_note=?, active=? WHERE id=?
       `).run(newName, newNote, newActive, sid);
 
-      const updated = db.prepare('SELECT * FROM suppliers WHERE id=?').get(sid);
-      res.json({ ok: true, supplier: updated });
+      const row = db.prepare('SELECT * FROM suppliers WHERE id=?').get(sid);
+      res.json({ ok:true, supplier:row });
 
     } catch (e) {
-      res.status(400).json({ ok: false, error: String(e.message || e) });
+      res.status(400).json({ ok:false, error:String(e.message) });
     }
   });
-
 
   app.delete('/api/admin/suppliers/:id', authMiddleware, adminOnly, (req, res) => {
     try {
       const sid = Number(req.params.id);
-      if (!Number.isFinite(sid))
-        return res.status(400).json({ ok: false, error: 'bad id' });
+      if (!Number.isFinite(sid)) throw new Error('bad id');
 
-      const trx = db.transaction((supplierId) => {
-        const orderIds = db.prepare(`SELECT id FROM orders WHERE supplier_id=?`)
-          .all(supplierId)
-          .map(r => r.id);
-
-        if (orderIds.length) {
-          const qm = orderIds.map(()=>'?').join(',');
-          db.prepare(`DELETE FROM order_items WHERE order_id IN (${qm})`)
-            .run(...orderIds);
-          db.prepare(`DELETE FROM orders WHERE id IN (${qm})`)
-            .run(...orderIds);
+      const trx = db.transaction(id => {
+        const prods = db.prepare(`SELECT id FROM products WHERE supplier_id=?`).all(id).map(x=>x.id);
+        if (prods.length) {
+          const qm = prods.map(()=>'?').join(',');
+          db.prepare(`DELETE FROM requisition_items WHERE product_id IN (${qm})`).run(...prods);
+          db.prepare(`DELETE FROM order_items WHERE product_id IN (${qm})`).run(...prods);
+          db.prepare(`DELETE FROM products WHERE id IN (${qm})`).run(...prods);
         }
 
-        const prodIds = db.prepare(`SELECT id FROM products WHERE supplier_id=?`)
-          .all(supplierId)
-          .map(r => r.id);
-
-        if (prodIds.length) {
-          const qm = prodIds.map(()=>'?').join(',');
-          db.prepare(`DELETE FROM requisition_items WHERE product_id IN (${qm})`)
-            .run(...prodIds);
-          db.prepare(`DELETE FROM order_items WHERE product_id IN (${qm})`)
-            .run(...prodIds);
-          db.prepare(`DELETE FROM products WHERE id IN (${qm})`)
-            .run(...prodIds);
+        const orders = db.prepare(`SELECT id FROM orders WHERE supplier_id=?`).all(id).map(x=>x.id);
+        if (orders.length) {
+          const qm = orders.map(()=>'?').join(',');
+          db.prepare(`DELETE FROM order_items WHERE order_id IN (${qm})`).run(...orders);
+          db.prepare(`DELETE FROM orders WHERE id IN (${qm})`).run(...orders);
         }
 
-        const r = db.prepare('DELETE FROM suppliers WHERE id=?').run(supplierId);
-        if (r.changes === 0) throw new Error('not found');
+        db.prepare(`DELETE FROM suppliers WHERE id=?`).run(id);
       });
 
       trx(sid);
-      res.json({ ok: true });
+      res.json({ ok:true });
 
     } catch (e) {
-      res.status(400).json({ ok: false, error: String(e.message || e) });
+      res.status(400).json({ ok:false, error:String(e.message) });
     }
   });
 
+  /* -------- PRODUCTS ---------- */
 
-  /* ==== PRODUCTS ==== */
-
-  app.get('/api/admin/products', authMiddleware, adminOnly, (_req, res) => {
+  app.get('/api/admin/products', authMiddleware, adminOnly, (req,res)=>{
     try {
       const rows = db.prepare(`
         SELECT p.*, s.name AS supplier_name
@@ -460,76 +353,62 @@ function registerCatalogRoutes(app) {
         JOIN suppliers s ON s.id = p.supplier_id
         ORDER BY p.active DESC, p.name
       `).all();
-      res.json({ ok: true, products: rows });
-    } catch (e) {
-      res.status(500).json({ ok: false, error: String(e.message || e) });
+      res.json({ ok:true, products:rows });
+    } catch(e){
+      res.status(500).json({ ok:false, error:String(e.message) });
     }
   });
 
-  app.post('/api/admin/products', authMiddleware, adminOnly, (req, res) => {
+  app.post('/api/admin/products', authMiddleware, adminOnly, (req,res)=>{
     try {
-      const { name, unit, supplier_id, category = 'Общее' } = req.body || {};
-      if (!name || name.trim().length < 2)
-        throw new Error('Название товара слишком короткое');
+      const { name, unit, category='Общее', supplier_id } = req.body || {};
 
-      if (!unit)
-        throw new Error('Ед. изм. обязательна');
+      if (!name || name.trim().length < 2) throw new Error('Название товара слишком короткое');
+      if (!unit) throw new Error('Ед. изм. обязательна');
 
       const sid = Number(supplier_id);
-      if (!Number.isFinite(sid))
-        throw new Error('Некорректный supplier_id');
+      if (!Number.isFinite(sid)) throw new Error('Некорректный supplier_id');
 
       const sup = db.prepare('SELECT id, active FROM suppliers WHERE id=?').get(sid);
       if (!sup) throw new Error('Поставщик не найден');
       if (sup.active === 0) throw new Error('Поставщик деактивирован');
 
       const r = db.prepare(`
-        INSERT INTO products (name, unit, category, supplier_id, active)
-        VALUES (?, ?, ?, ?, 1)
+        INSERT INTO products (name,unit,category,supplier_id,active)
+        VALUES (?,?,?,?,1)
       `).run(name.trim(), unit.trim(), category.trim(), sid);
 
-      const row = db.prepare('SELECT * FROM products WHERE id=?')
-        .get(r.lastInsertRowid);
+      const row = db.prepare(`SELECT * FROM products WHERE id=?`).get(r.lastInsertRowid);
+      res.json({ ok:true, product:row });
 
-      res.json({ ok: true, product: row });
-
-    } catch (e) {
-      const msg = String(e.message || e);
-      res.status(/UNIQUE/i.test(msg) ? 409 : 400)
-        .json({ ok: false, error: msg });
+    } catch(e){
+      res.status(400).json({ ok:false, error:String(e.message) });
     }
   });
 
-  /* === PATCH product === */
-
-  app.patch('/api/admin/products/:id', authMiddleware, adminOnly, (req, res) => {
+  app.patch('/api/admin/products/:id', authMiddleware, adminOnly, (req,res)=>{
     try {
       const pid = Number(req.params.id);
-      if (!Number.isFinite(pid))
-        return res.status(400).json({ ok: false, error: 'bad id' });
+      if (!Number.isFinite(pid)) throw new Error('bad id');
 
-      const prod = db.prepare('SELECT * FROM products WHERE id=?').get(pid);
-      if (!prod)
-        return res.status(404).json({ ok: false, error: 'not found' });
+      const prod = db.prepare(`SELECT * FROM products WHERE id=?`).get(pid);
+      if (!prod) throw new Error('not found');
 
       const { name, unit, category, supplier_id, active } = req.body || {};
 
-      const newName = name !== undefined ? name.trim() : prod.name;
-      if (newName.length < 2)
-        throw new Error('Название слишком короткое');
+      const newName = name != null ? name.trim() : prod.name;
+      if (newName.length < 2) throw new Error('Название слишком короткое');
 
-      const newUnit = unit !== undefined ? unit.trim() : prod.unit;
-      const newCategory = category !== undefined ? category.trim() : (prod.category || 'Общее');
+      const newUnit = unit != null ? unit.trim() : prod.unit;
+      const newCategory = category != null ? category.trim() : (prod.category || 'Общее');
 
-      const newSupplier = supplier_id !== undefined ? Number(supplier_id) : prod.supplier_id;
-      if (!Number.isFinite(newSupplier))
-        throw new Error('bad supplier');
+      const newSupplier = supplier_id != null ? Number(supplier_id) : prod.supplier_id;
+      if (!Number.isFinite(newSupplier)) throw new Error('bad supplier');
 
-      const sup = db.prepare('SELECT id FROM suppliers WHERE id=?').get(newSupplier);
-      if (!sup)
-        throw new Error('Поставщик не найден');
+      const sup = db.prepare(`SELECT id FROM suppliers WHERE id=?`).get(newSupplier);
+      if (!sup) throw new Error('Поставщик не найден');
 
-      const newActive = active !== undefined ? (active ? 1 : 0) : prod.active;
+      const newActive = active != null ? (active ? 1 : 0) : prod.active;
 
       db.prepare(`
         UPDATE products
@@ -537,43 +416,36 @@ function registerCatalogRoutes(app) {
         WHERE id=?
       `).run(newName, newUnit, newCategory, newSupplier, newActive, pid);
 
-      const updated = db.prepare('SELECT * FROM products WHERE id=?').get(pid);
+      const row = db.prepare(`SELECT * FROM products WHERE id=?`).get(pid);
+      res.json({ ok:true, product:row });
 
-      res.json({ ok: true, product: updated });
-
-    } catch (e) {
-      res.status(400).json({ ok: false, error: String(e.message || e) });
+    } catch(e){
+      res.status(400).json({ ok:false, error:String(e.message) });
     }
   });
 
-
-  app.delete('/api/admin/products/:id', authMiddleware, adminOnly, (req, res) => {
+  app.delete('/api/admin/products/:id', authMiddleware, adminOnly, (req,res)=>{
     try {
       const pid = Number(req.params.id);
-      if (!Number.isFinite(pid))
-        return res.status(400).json({ ok: false, error: 'bad id' });
+      if (!Number.isFinite(pid)) throw new Error('bad id');
 
-      const trx = db.transaction((productId) => {
-        db.prepare('DELETE FROM order_items WHERE product_id=?').run(productId);
-        db.prepare('DELETE FROM requisition_items WHERE product_id=?').run(productId);
-
-        const r = db.prepare('DELETE FROM products WHERE id=?').run(productId);
-        if (r.changes === 0)
-          throw new Error('not found');
+      const trx = db.transaction(id=>{
+        db.prepare(`DELETE FROM order_items WHERE product_id=?`).run(id);
+        db.prepare(`DELETE FROM requisition_items WHERE product_id=?`).run(id);
+        db.prepare(`DELETE FROM products WHERE id=?`).run(id);
       });
 
       trx(pid);
-      res.json({ ok: true });
+      res.json({ ok:true });
 
-    } catch (e) {
-      res.status(400).json({ ok: false, error: String(e.message || e) });
+    } catch(e){
+      res.status(400).json({ ok:false, error:String(e.message) });
     }
   });
 
+  /* ------ Public Products for staff ------ */
 
-  /* ==== PUBLIC products for staff form ==== */
-
-  app.get('/api/products', authMiddleware, (_req, res) => {
+  app.get('/api/products', authMiddleware, (req,res)=>{
     try {
       const rows = db.prepare(`
         SELECT p.id, p.name, p.unit, p.category,
@@ -583,108 +455,91 @@ function registerCatalogRoutes(app) {
         WHERE p.active = 1
         ORDER BY p.name
       `).all();
-
-      res.json({ ok: true, products: rows });
-
-    } catch (e) {
-      res.status(500).json({ ok: false, error: String(e.message || e) });
+      res.json({ ok:true, products:rows });
+    } catch (e){
+      res.status(500).json({ ok:false, error:String(e.message) });
     }
   });
+
 }
 
-
-/* ================== Requisitions ================== */
+/* ===================================================== */
+/* =================== REQUISITIONS ==================== */
+/* ===================================================== */
 
 function registerRequisitionRoutes(app) {
 
-  app.post('/api/requisitions', authMiddleware, (req, res) => {
+  app.post('/api/requisitions', authMiddleware, (req,res)=>{
     const { items } = req.body || {};
-    if (!Array.isArray(items) || items.length === 0)
-      return res.status(400).json({ ok: false, error: 'items required' });
+    if (!Array.isArray(items) || items.length===0)
+      return res.status(400).json({ ok:false, error:'items required' });
 
-    const trx = db.transaction(() => {
-
+    const trx = db.transaction(()=>{
       const col = REQ_USER_COL;
 
       const rReq = db.prepare(`
-        INSERT INTO requisitions (${col}, status)
+        INSERT INTO requisitions (${col},status)
         VALUES (?, 'created')
       `).run(req.user.tg_user_id);
 
       const reqId = Number(rReq.lastInsertRowid);
 
-      const insReqItem   = db.prepare(`INSERT INTO requisition_items (requisition_id, product_id, qty_requested) VALUES (?,?,?)`);
-      const getProd      = db.prepare(`SELECT id, supplier_id FROM products WHERE id = ? AND active = 1`);
-      const insOrder     = db.prepare(`INSERT INTO orders (requisition_id, supplier_id, status) VALUES (?, ?, 'draft')`);
-      const insOrderItem = db.prepare(`INSERT INTO order_items (order_id, product_id, qty_requested, qty_final) VALUES (?,?,?,?)`);
+      const insReqItem = db.prepare(`INSERT INTO requisition_items (requisition_id,product_id,qty_requested) VALUES (?,?,?)`);
+      const getProd = db.prepare(`SELECT id,supplier_id FROM products WHERE id=? AND active=1`);
+      const insOrder = db.prepare(`INSERT INTO orders (requisition_id,supplier_id,status) VALUES (?, ?, 'draft')`);
+      const insOrderItem = db.prepare(`INSERT INTO order_items (order_id,product_id,qty_requested,qty_final) VALUES (?,?,?,?)`);
 
-      const ordersMap = new Map();
+      const orders = new Map();
 
-      for (const it of items) {
+      for(const it of items){
         const pid = Number(it.product_id);
         const qty = Number(it.qty);
-        if (!Number.isFinite(pid) || !(qty > 0))
+        if (!Number.isFinite(pid) || !(qty>0))
           throw new Error('Bad item');
 
         const prod = getProd.get(pid);
-        if (!prod)
-          throw new Error(`Product ${pid} not found or inactive`);
+        if (!prod) throw new Error(`Product ${pid} not found`);
 
         insReqItem.run(reqId, pid, qty);
 
-        let orderId = ordersMap.get(prod.supplier_id);
-        if (!orderId) {
-          const rOrd = insOrder.run(reqId, prod.supplier_id);
-          orderId = Number(rOrd.lastInsertRowid);
-          ordersMap.set(prod.supplier_id, orderId);
+        let oid = orders.get(prod.supplier_id);
+        if (!oid){
+          const r = insOrder.run(reqId, prod.supplier_id);
+          oid = Number(r.lastInsertRowid);
+          orders.set(prod.supplier_id, oid);
         }
 
-        insOrderItem.run(orderId, pid, qty, qty);
+        insOrderItem.run(oid, pid, qty, qty);
       }
 
-      db.prepare(`UPDATE requisitions SET status='processed' WHERE id=?`)
-        .run(reqId);
-
+      db.prepare(`UPDATE requisitions SET status='processed' WHERE id=?`).run(reqId);
       return reqId;
     });
 
     try {
-      const reqId = trx();
-
-      try {
-        const msg = buildRequisitionMessage(reqId, req.user.name || req.user.tg_user_id);
-        sendTelegram(msg);
-      } catch {}
-
-      res.json({ ok: true, requisition_id: reqId });
-
-    } catch (e) {
-      res.status(400).json({ ok: false, error: String(e.message || e) });
+      const id = trx();
+      res.json({ ok:true, requisition_id:id });
+    } catch(e){
+      res.status(400).json({ ok:false, error:String(e.message) });
     }
   });
 
-
-  app.get('/api/admin/requisitions', authMiddleware, adminOnly, (_req, res) => {
+  app.get('/api/admin/requisitions', authMiddleware, adminOnly, (req,res)=>{
     try {
-      const col = REQ_USER_COL;
-
       const rows = db.prepare(`
         SELECT r.id, r.created_at, u.name AS user_name
         FROM requisitions r
-        LEFT JOIN users u ON u.tg_user_id = r.${col}
+        LEFT JOIN users u ON u.tg_user_id = r.${REQ_USER_COL}
         ORDER BY r.id DESC
         LIMIT 200
       `).all();
-
-      res.json({ ok: true, requisitions: rows });
-
-    } catch (e) {
-      res.status(500).json({ ok: false, error: String(e.message || e) });
+      res.json({ ok:true, requisitions:rows });
+    } catch(e){
+      res.status(500).json({ ok:false, error:String(e.message) });
     }
   });
 
-
-  app.get('/api/admin/requisitions/:id', authMiddleware, adminOnly, (req, res) => {
+  app.get('/api/admin/requisitions/:id', authMiddleware, adminOnly, (req,res)=>{
     try {
       const id = Number(req.params.id);
 
@@ -694,73 +549,82 @@ function registerRequisitionRoutes(app) {
                s.name AS supplier_name
         FROM orders o
         JOIN suppliers s ON s.id = o.supplier_id
-        WHERE o.requisition_id = ?
+        WHERE o.requisition_id=?
         ORDER BY s.name
       `).all(id);
 
-      const itemsStmt = db.prepare(`
-        SELECT oi.id AS item_id,
-               p.name AS product_name,
-               p.unit,
-               oi.qty_requested,
-               oi.qty_final,
-               oi.note
+      const items = db.prepare(`
+        SELECT p.name AS product_name, p.unit,
+               oi.qty_requested, oi.qty_final, oi.note
         FROM order_items oi
         JOIN products p ON p.id = oi.product_id
-        WHERE oi.order_id = ?
+        WHERE oi.order_id=?
         ORDER BY p.name
       `);
 
-      const result = orders.map(o => ({
-        order_id: o.order_id,
-        supplier: { id: o.supplier_id, name: o.supplier_name },
-        items: itemsStmt.all(o.order_id),
-      }));
+      res.json({
+        ok:true,
+        orders:orders.map(o=>({
+          order_id:o.order_id,
+          supplier:{ id:o.supplier_id, name:o.supplier_name },
+          items:items.all(o.order_id)
+        }))
+      });
 
-      res.json({ ok: true, orders: result });
-
-    } catch (e) {
-      res.status(500).json({ ok: false, error: String(e.message || e) });
+    } catch(e){
+      res.status(500).json({ ok:false, error:String(e.message) });
     }
   });
+
 }
 
+/* ===================================================== */
+/* ===================== /api/me ======================== */
+/* ===================================================== */
 
-/* ================== Misc ================== */
-
-app.get('/api/me', (req, res, next) =>
-  authMiddleware(req, res, () => {
-    res.json({
-      ok: true,
-      user: {
-        id: req.user.tg_user_id,
-        name: req.user.name,
-        role: req.user.role
-      }
-    });
-  })
-);
-
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
-
-
-/* ================== Start ================== */
-
-(async function start() {
-  try {
-    await loadDb();
-    if (typeof migrate === 'function') {
-      try { migrate(); } catch {}
+app.get('/api/me', authMiddleware, (req,res)=>{
+  res.json({
+    ok:true,
+    user:{
+      id:req.user.tg_user_id,
+      name:req.user.name,
+      role:req.user.role
     }
+  });
+});
 
+/* ===================================================== */
+/* ===================== STATIC ========================= */
+/* ===================================================== */
+/*
+  ВАЖНО: статика ДОЛЖНА БЫТЬ В САМОМ НИЗУ,
+  чтобы не перехватывать маршруты /api
+*/
+
+const publicDir = path.join(__dirname, 'public');
+
+app.use(express.static(publicDir));
+
+app.get('/', (req,res)=> res.sendFile(path.join(publicDir, 'index.html')));
+app.get(['/admin','/admin.html'], (req,res)=> res.sendFile(path.join(publicDir,'admin.html')));
+app.get(['/staff','/staff.html'], (req,res)=> res.sendFile(path.join(publicDir,'staff.html')));
+
+app.get('/favicon.ico', (_req,res)=> res.status(204).end());
+
+/* ===================================================== */
+/* ====================== START ========================= */
+/* ===================================================== */
+
+(async function start(){
+  try{
+    await loadDb();
+    try { migrate(); } catch{}
     ensureSchema();
     registerCatalogRoutes(app);
     registerRequisitionRoutes(app);
-
     const port = Number(process.env.PORT || 8080);
-    app.listen(port, () => console.log('API listening on', port));
-
-  } catch (err) {
+    app.listen(port, ()=> console.log('API listening on', port));
+  } catch(err){
     console.error('Fatal start error:', err);
     process.exit(1);
   }
