@@ -262,21 +262,30 @@ app.get('/api/me', auth, (req,res)=>{
 });
 
 app.post('/api/admin/suppliers', auth, admin, (req,res)=>{
-  const { name, contact_note='' } = req.body || {};
+  try {
+    console.log("SUPPLIER POST BODY =", req.body);
 
-  if (!name || name.trim().length < 2)
-    return res.status(400).json({ ok:false, error:'Название короткое' });
+    const { name, contact_note = '' } = req.body || {};
 
-  const r = db.prepare(`
-    INSERT INTO suppliers (name,contact_note,active)
-    VALUES (?,?,1)
-  `).run(name.trim(), contact_note);
+    if (!name || name.trim().length < 2)
+      return res.status(400).json({ ok:false, error:'Название короткое' });
 
-  const row = db.prepare(`SELECT * FROM suppliers WHERE id=?`)
-    .get(r.lastInsertRowid);
+    const r = db.prepare(`
+      INSERT INTO suppliers (name, contact_note, active)
+      VALUES (?,?,1)
+    `).run(name.trim(), contact_note.trim());
 
-  res.json({ ok:true, supplier: row });
+    const row = db.prepare(`SELECT * FROM suppliers WHERE id=?`)
+      .get(r.lastInsertRowid);
+
+    return res.json({ ok:true, supplier: row });
+
+  } catch(e) {
+    console.error("SUPPLIER ADD ERROR:", e);
+    return res.status(500).json({ ok:false, error:String(e.message || e) });
+  }
 });
+
 /* ===================================================== */
 /* ====================== PRODUCTS ====================== */
 /* ===================================================== */
