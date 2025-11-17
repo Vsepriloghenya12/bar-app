@@ -4,7 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Админ-панель</title>
-  <link rel="stylesheet" href="./admin.css"/>
+
+  <!-- Важно: пути абсолютные -->
+  <link rel="stylesheet" href="/admin.css"/>
+
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 
@@ -48,7 +51,7 @@
   </div>
 
   <!-- ==================================================== -->
-  <!-- =============== МОДАЛКА РЕДАКТИРОВАНИЯ ============= -->
+  <!-- =============== МОДАЛЬНОЕ ОКНО ===================== -->
   <!-- ==================================================== -->
 
   <div id="prodModal" class="modal">
@@ -81,6 +84,7 @@
     </div>
   </div>
 
-  <script src="./admin.js" defer></script>
+  <!-- Важно: абсолютный путь -->
+  <script src="/admin.js" defer></script>
 </body>
 </html>
