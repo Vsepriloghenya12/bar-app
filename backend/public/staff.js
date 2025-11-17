@@ -1,8 +1,17 @@
 const API = location.origin;
 const $ = s => document.querySelector(s);
 
+function getInit(){
+  return decodeURIComponent(new URLSearchParams(location.search).get("initData") || "");
+}
+
 async function api(url, method="GET", data=null){
-  const opt = { method, headers:{ "Content-Type":"application/json" } };
+  const headers = {
+    "Content-Type":"application/json",
+    "X-TG-INIT-DATA": getInit()
+  };
+
+  const opt = { method, headers };
   if (data) opt.body = JSON.stringify(data);
 
   const r = await fetch(url, opt);
@@ -14,12 +23,10 @@ async function api(url, method="GET", data=null){
   return j;
 }
 
-/* ===================================================== */
-/* PRODUCTS LIST (only active) */
-/* ===================================================== */
+/* ---------------- PRODUCTS ---------------- */
 
 let PRODUCTS = [];
-let DISABLED_PRODUCT_IDS = new Set(); // товары, которые уже есть в pending
+let DISABLED = new Set();
 
 async function loadProducts(){
   const box = $("#products");
@@ -34,71 +41,57 @@ async function loadProducts(){
 function renderProducts(){
   const box = $("#products");
 
-  box.innerHTML = PRODUCTS.map(p => {
-    const disabled = DISABLED_PRODUCT_IDS.has(p.id);
+  box.innerHTML = PRODUCTS.map(p=>{
+    const dis = DISABLED.has(p.id);
 
     return `
-      <div class="card product-card ${disabled ? 'disabled' : ''}">
-        <b>${p.name}</b> (${p.unit})
-        <br><small>${p.category}</small>
+      <div class="card ${dis?'disabled':''}">
+        <b>${p.name}</b> (${p.unit})<br>
+        <small>${p.category}</small><br>
 
-        ${disabled 
-          ? `<div class="warn">Уже в активном заказе</div>`
-          : `<input type="number" 
-                     min="0" 
-                     placeholder="Кол-во" 
-                     id="qty_${p.id}" 
-                     class="qty-input">`
+        ${dis 
+          ? `<div class="warn">Уже заказан</div>`
+          : `<input type="number" min="0" id="qty_${p.id}" placeholder="Кол-во" class="qty-input">`
         }
       </div>
     `;
   }).join("");
 }
 
-/* ===================================================== */
-/* SEND REQUISITION */
-/* ===================================================== */
+/* ---------------- SEND REQUISITION ---------------- */
 
 $("#send").onclick = async ()=>{
   const items = [];
 
   PRODUCTS.forEach(p=>{
-    if (DISABLED_PRODUCT_IDS.has(p.id)) return;
+    if (DISABLED.has(p.id)) return;
 
     const el = $(`#qty_${p.id}`);
     if (!el) return;
 
     const val = Number(el.value);
     if (val > 0){
-      items.push({
-        product_id: p.id,
-        qty: val
-      });
+      items.push({ product_id:p.id, qty:val });
     }
   });
 
-  if (!items.length){
-    alert("Выберите товары перед отправкой.");
-    return;
-  }
+  if (!items.length) return alert("Выберите товары");
 
   try{
     await api("/api/requisitions","POST",{ items });
     alert("Заявка отправлена!");
-    await loadProducts();
-    await loadOrders();
 
-    // очистить поля
-    document.querySelectorAll(".qty-input").forEach(e=> e.value="");
+    loadProducts();
+    loadOrders();
+
+    document.querySelectorAll(".qty-input").forEach(i=>i.value="");
 
   }catch(e){
     alert(e.message);
   }
 };
 
-/* ===================================================== */
-/* LOAD ACTIVE ORDERS */
-/* ===================================================== */
+/* ---------------- ACTIVE ORDERS ---------------- */
 
 async function loadOrders(){
   const box = $("#orders");
@@ -106,48 +99,38 @@ async function loadOrders(){
 
   const { orders } = await api("/api/my-orders");
 
-  // отключаем товары, которые находятся в pending заказах
-  DISABLED_PRODUCT_IDS = new Set();
-  orders.forEach(group=>{
-    group.items.forEach(it=> DISABLED_PRODUCT_IDS.add(it.product_id));
-  });
+  DISABLED = new Set();
+  orders.forEach(g => g.items.forEach(it=> DISABLED.add(it.product_id)));
 
-  renderProducts(); // обновляем список с disabled-товарами
+  renderProducts();
 
-  if (orders.length === 0){
+  if (!orders.length){
     box.innerHTML = "<div class='muted'>Нет активных заказов</div>";
     return;
   }
 
-  box.innerHTML = orders.map(group => `
+  box.innerHTML = orders.map(g=>`
     <div class="card">
-      <h3>${group.supplier_name}</h3>
-      ${group.items.map(it => `
-        <div>
-          ${it.name} — ${it.qty} ${it.unit}
-        </div>
-      `).join("")}
-
-      <button onclick="markDelivered(${group.supplier_id})"
-              class="main-btn small-btn"
-      >Заказ пришёл</button>
+      <h3>${g.supplier_name}</h3>
+      ${g.items.map(it=>`${it.name} — ${it.qty} ${it.unit}`).join("<br>")}
+      <br>
+      <button class="main-btn small-btn" onclick="delivered(${g.supplier_id})">
+        Заказ пришёл
+      </button>
     </div>
   `).join("");
 }
 
-async function markDelivered(supplier_id){
+async function delivered(supplier){
   try{
-    await api(`/api/my-orders/${supplier_id}/delivered`, "POST");
-    await loadOrders();
-    await loadProducts();
+    await api(`/api/my-orders/${supplier}/delivered`, "POST");
+    loadOrders();
+    loadProducts();
   }catch(e){
     alert(e.message);
   }
 }
 
-/* ===================================================== */
 /* INIT */
-/* ===================================================== */
-
 loadProducts();
 loadOrders();

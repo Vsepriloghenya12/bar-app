@@ -1,8 +1,17 @@
 const API = location.origin;
 const $ = s => document.querySelector(s);
 
+function getInit(){
+  return decodeURIComponent(new URLSearchParams(location.search).get("initData") || "");
+}
+
 async function api(url, method="GET", data=null){
-  const opt = { method, headers:{ "Content-Type":"application/json" } };
+  const headers = {
+    "Content-Type": "application/json",
+    "X-TG-INIT-DATA": getInit()
+  };
+
+  const opt = { method, headers };
   if (data) opt.body = JSON.stringify(data);
 
   const r = await fetch(url, opt);
@@ -24,10 +33,9 @@ async function loadSuppliers(){
 
   box.innerHTML = suppliers.map(s => `
     <div class="card">
-      <b>${s.id}</b> — ${s.name}
-      <br>Примечание: ${s.contact_note || "-"}
-      <br>Активен: ${s.active ? "да" : "нет"}
-      <br>
+      <b>${s.id}</b> — ${s.name}<br>
+      Примечание: ${s.contact_note || "-"}<br>
+      Активен: ${s.active ? "да" : "нет"}<br>
       <button onclick="editSupplier(${s.id})">Ред.</button>
       <button onclick="deleteSupplier(${s.id})">Удалить</button>
     </div>
@@ -37,7 +45,7 @@ async function loadSuppliers(){
 async function deleteSupplier(id){
   if (!confirm("Удалить поставщика?")) return;
   await api(`/api/admin/suppliers/${id}`, "DELETE");
-  await loadSuppliers();
+  loadSuppliers();
 }
 
 async function editSupplier(id){
@@ -54,7 +62,6 @@ async function editSupplier(id){
   loadSuppliers();
 }
 
-/* create supplier */
 $("#sup_add").onclick = async ()=>{
   const name = $("#sup_name").value.trim();
   const note = $("#sup_note").value.trim();
@@ -65,6 +72,7 @@ $("#sup_add").onclick = async ()=>{
     await api("/api/admin/suppliers", "POST", {
       name, contact_note: note
     });
+
     $("#sup_name").value="";
     $("#sup_note").value="";
     loadSuppliers();
@@ -84,11 +92,10 @@ async function loadProducts(){
 
   box.innerHTML = products.map(p => `
     <div class="card">
-      <b>${p.id}</b> — ${p.name}
-      <br>${p.unit}, ${p.category}
-      <br>Поставщик: ${p.supplier_id} (${p.supplier_name})
-      <br>Активен: ${p.active ? "да" : "нет"}
-      <br>
+      <b>${p.id}</b> — ${p.name}<br>
+      ${p.unit}, ${p.category}<br>
+      Поставщик: ${p.supplier_id} (${p.supplier_name})<br>
+      Активен: ${p.active ? "да" : "нет"}<br>
 
       <button onclick="editProduct(${p.id})">Ред.</button>
       <button onclick="deleteProduct(${p.id})">Удалить</button>
@@ -111,6 +118,7 @@ async function editProduct(id){
   if (!unit) return;
 
   const category = prompt("Категория:") || "Общее";
+
   const supplier_id = Number(prompt("ID поставщика:"));
   if (!supplier_id) return;
 
@@ -123,7 +131,6 @@ async function editProduct(id){
   loadProducts();
 }
 
-/* Add product */
 $("#p_add").onclick = async ()=>{
   const name = $("#p_name").value.trim();
   const unit = $("#p_unit").value.trim();
@@ -131,7 +138,7 @@ $("#p_add").onclick = async ()=>{
   const supplier_id = Number($("#p_sup").value);
 
   if (!name || !unit || !supplier_id){
-    return alert("Заполните все поля.");
+    return alert("Заполните поля");
   }
 
   try{
@@ -158,28 +165,27 @@ async function editAlts(pid){
   const list = alternatives.map(a=>`${a.supplier_id} — ${a.name}`).join("\n");
 
   const choice = prompt(
-    `Альтернативные поставщики:\n${list}\n\n` +
-    `1. Ввести ID поставщика чтобы ДОБАВИТЬ\n` +
-    `2. Или ввести "-ID" чтобы УДАЛИТЬ`
+    `Альтернативные:\n${list}\n\n`+
+    `Введите ID чтобы ДОБАВИТЬ\n`+
+    `Введите -ID чтобы УДАЛИТЬ`
   );
 
   if (!choice) return;
 
   if (choice.startsWith("-")){
-    const id = Number(choice.slice(1));
-    if (id) await api(`/api/admin/products/${pid}/alternatives/${id}`, "DELETE");
+    const sid = Number(choice.slice(1));
+    if (sid)
+      await api(`/api/admin/products/${pid}/alternatives/${sid}`, "DELETE");
   }
   else {
-    const id = Number(choice);
-    if (id) await api(`/api/admin/products/${pid}/alternatives`, "POST", { supplier_id:id });
+    const sid = Number(choice);
+    if (sid)
+      await api(`/api/admin/products/${pid}/alternatives`, "POST", { supplier_id:sid });
   }
 
   alert("Готово");
 }
 
-/* -------------------------------------------------- */
 /* INIT */
-/* -------------------------------------------------- */
-
 loadSuppliers();
 loadProducts();

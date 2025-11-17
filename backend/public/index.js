@@ -45,16 +45,21 @@
 
     try{
       const u = await loadUser(init);
-      log("role = " + u.role);
-      location.replace(u.role === "admin" ? "/admin" : "/staff");
+
+      const target = u.role === "admin" ? "/admin" : "/staff";
+      location.replace(target + "?initData=" + encodeURIComponent(init));
+
     }catch(e){
       log("Ошибка: " + e.message);
 
       try{
         const u = await loadUser("");
-        location.replace(u.role === "admin" ? "/admin" : "/staff");
+
+        const target = u.role === "admin" ? "/admin" : "/staff";
+        location.replace(target);
+
       }catch(e2){
-        log("Фатальная ошибка авторизации");
+        log("Фатальная ошибка");
       }
     }
   }
