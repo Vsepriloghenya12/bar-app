@@ -1,31 +1,23 @@
 (() => {
   'use strict';
+
   const API_BASE = location.origin;
 
-  /* ================= InitData ================= */
+  /* ================= INIT DATA ================= */
 
   function getInitData() {
-    const tg = window.Telegram && window.Telegram.WebApp;
+    const tg = window.Telegram?.WebApp;
+
     if (tg?.initData) return tg.initData;
 
     if (tg?.initDataUnsafe) {
       try {
         const p = new URLSearchParams();
-        const u = tg.initDataUnsafe;
-        if (u.query_id) p.set('query_id', u.query_id);
-        if (u.user) p.set('user', JSON.stringify(u.user));
-        if (u.start_param) p.set('start_param', u.start_param);
-        if (u.auth_date) p.set('auth_date', String(u.auth_date));
-        if (u.hash) p.set('hash', u.hash);
+        if (tg.initDataUnsafe.query_id) p.set('query_id', tg.initDataUnsafe.query_id);
+        if (tg.initDataUnsafe.user) p.set('user', JSON.stringify(tg.initDataUnsafe.user));
+        if (tg.initDataUnsafe.auth_date) p.set('auth_date', String(tg.initDataUnsafe.auth_date));
+        if (tg.initDataUnsafe.hash) p.set('hash', tg.initDataUnsafe.hash);
         if (p.get('hash')) return p.toString();
-      } catch {}
-    }
-
-    if (location.hash.includes('tgWebAppData=')) {
-      try {
-        const h = new URLSearchParams(location.hash.slice(1));
-        const raw = h.get('tgWebAppData');
-        if (raw) return decodeURIComponent(raw);
       } catch {}
     }
 
@@ -35,119 +27,264 @@
   const TG_INIT = getInitData();
 
 
-  /* ================= API Helper ================= */
+  /* ================= API WRAPPER ================= */
 
-  async function api(path, { method='GET', body } = {}) {
-    const url = new URL(API_BASE + path);
-    const m = method.toUpperCase();
-
-    const headers = {
-      'Content-Type': 'application/json',
-      'X-TG-INIT-DATA': TG_INIT     // <-- главное исправление
+  async function api(path, { method = 'GET', body } = {}) {
+    const opts = {
+      method,
+      headers: {
+        'X-TG-INIT-DATA': TG_INIT,
+        'Content-Type': 'application/json'
+      }
     };
 
-    // POST / PATCH — идут через body
-    if (m === 'POST' || m === 'PATCH') {
-      const res = await fetch(url, {
-        method: m,
-        headers,
-        body: JSON.stringify(body || {})
-      });
-      const j = await res.json().catch(()=>({}));
-      if (!res.ok || j?.ok === false) {
-        throw new Error(j?.error || res.statusText);
-      }
-      return j;
+    if (method !== 'GET' && method !== 'DELETE') {
+      opts.body = JSON.stringify(body || {});
     }
 
-    // GET / DELETE — initData передаётся в query
-    if (TG_INIT) url.searchParams.set('initData', encodeURIComponent(TG_INIT));
+    const res = await fetch(API_BASE + path, opts);
+    const j = await res.json().catch(() => ({}));
 
-    const res = await fetch(url, { method: m, headers });
-    const j = await res.json().catch(()=>({}));
-    if (!res.ok || j?.ok === false) {
-      throw new Error(j?.error || res.statusText);
+    if (!res.ok || j.ok === false) {
+      throw new Error(j.error || res.statusText);
     }
     return j;
   }
 
 
-  /* ================= DOM Helpers ================= */
+  /* ================= DOM HELPERS ================= */
 
   const $ = s => document.querySelector(s);
-
-  function el(tag, attrs={}, ...children){
+  const el = (tag, attrs = {}, ...children) => {
     const e = document.createElement(tag);
-    for(const [k,v] of Object.entries(attrs)){
-      if(k === 'className') e.className = v;
-      else if(k === 'html') e.innerHTML = v;
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'className') e.className = v;
+      else if (k === 'html') e.innerHTML = v;
       else e.setAttribute(k, v);
     }
-    for(const c of children){
+    for (const c of children) {
       if (c == null) continue;
       e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
     }
     return e;
-  }
-
-  const btn = (text, handler) => {
-    const b = el('button',{ className:'btn', type:'button' }, text);
-    if (handler) b.addEventListener('click', handler);
-    return b;
   };
 
 
-  /* ================= Containers ================= */
+  /* ================= MODAL ELEMENTS ================= */
 
-  const boxWarn = $('#warning');
-  const boxSup  = $('#suppliers');
-  const boxProd = $('#products');
-  const boxReq  = $('#requisitions');
+  const modal = $('#prodModal');
+  const mName = $('#mProdName');
+  const mUnit = $('#mProdUnit');
+  const mCategory = $('#mProdCategory');
+  const mSupplier = $('#mProdSupplier');
+  const mActive = $('#mProdActive');
+  const mSave = $('#mSave');
+  const mCancel = $('#mCancel');
+
+  let CURRENT_PRODUCT = null;
+  let SUPPLIERS_CACHE = [];
 
 
-  /* ================= Suppliers ================= */
+  function openModal(product) {
+    CURRENT_PRODUCT = product;
+
+    mName.value = product.name;
+    mUnit.value = product.unit;
+    mCategory.value = product.category || 'Общее';
+    mActive.checked = product.active === 1;
+
+    // заполняем список поставщиков
+    mSupplier.innerHTML = '';
+    SUPPLIERS_CACHE.forEach(s => {
+      const opt = el('option', { value: s.id }, s.name);
+      if (s.id === product.supplier_id) opt.selected = true;
+      mSupplier.appendChild(opt);
+    });
+
+    modal.classList.add('show');
+  }
+
+  function closeModal() {
+    modal.classList.remove('show');
+    CURRENT_PRODUCT = null;
+  }
+
+  mCancel.addEventListener('click', closeModal);
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closeModal();
+  });
+
+
+  /* ================= SUPPLIERS ================= */
 
   async function loadSuppliers() {
     const data = await api('/api/admin/suppliers');
+    SUPPLIERS_CACHE = data.suppliers || [];
 
-    boxSup.innerHTML = '';
+    const box = $('#suppliers');
+    box.innerHTML = '';
 
-    (data.suppliers || []).forEach(s => {
-
-      const row = el('div', { className:'card spaced' },
+    SUPPLIERS_CACHE.forEach(s => {
+      box.appendChild(el('div', { className: 'card spaced' },
         el('div', {}, `#${s.id} — ${s.name}`),
-        s.contact_note ? el('div', { className:'muted' }, s.contact_note) : '',
-        btn('Изменить', () => editSupplier(s)),
-        btn('Удалить', async () => {
-          if (!confirm(`Удалить поставщика "${s.name}"?`)) return;
-          try {
-            await api(`/api/admin/suppliers/${s.id}`, { method:'DELETE' });
-            await loadSuppliers();
-            await loadProducts();
-          } catch (e) { alert(e.message); }
-        })
-      );
-
-      boxSup.appendChild(row);
+        s.contact_note ? el('div', { className: 'muted' }, s.contact_note) : '',
+        el('button', {
+          className: 'btn',
+          type: 'button',
+          onclick: () => editSupplier(s)
+        }, 'Изменить'),
+        el('button', {
+          className: 'btn btn-secondary',
+          type: 'button',
+          onclick: () => deleteSupplier(s.id, s.name)
+        }, 'Удалить')
+      ));
     });
   }
 
-
   async function editSupplier(s) {
-
     const name = prompt('Название поставщика:', s.name);
     if (!name) return;
 
-    const contact_note = prompt('Комментарий:', s.contact_note || '');
-    const active = confirm('Поставщик активен? (OK = Да)');
+    const note = prompt('Комментарий:', s.contact_note || '');
+    const active = confirm('Поставщик активен?');
 
     try {
       await api(`/api/admin/suppliers/${s.id}`, {
-        method:'PATCH',
-        body:{ name, contact_note, active }
+        method: 'PATCH',
+        body: {
+          name,
+          contact_note: note,
+          active
+        }
       });
 
       await loadSuppliers();
+      await loadProducts();
+
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function deleteSupplier(id, name) {
+    if (!confirm(`Удалить поставщика "${name}"?`)) return;
+
+    try {
+      await api(`/api/admin/suppliers/${id}`, { method: 'DELETE' });
+      await loadSuppliers();
+      await loadProducts();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+
+  /* ================= PRODUCTS ================= */
+
+  async function loadProducts() {
+    const data = await api('/api/admin/products');
+    const box = $('#products');
+    box.innerHTML = '';
+
+    (data.products || []).forEach(p => {
+      const row = el('div', { className: 'card spaced' },
+        el('div', {}, `#${p.id} — ${p.name} (${p.unit})`),
+        el('div', { className: 'muted' }, `Категория: ${p.category || 'Общее'}`),
+        el('div', { className: 'muted' }, `Поставщик: ${p.supplier_name}`),
+
+        el('button', {
+          className: 'btn',
+          type: 'button',
+          onclick: () => openModal(p)
+        }, 'Изменить'),
+
+        el('button', {
+          className: 'btn btn-secondary',
+          type: 'button',
+          onclick: () => deleteProduct(p.id, p.name)
+        }, 'Удалить')
+      );
+
+      box.appendChild(row);
+    });
+  }
+
+  async function deleteProduct(id, name) {
+    if (!confirm(`Удалить товар "${name}"?`)) return;
+
+    try {
+      await api(`/api/admin/products/${id}`, { method: 'DELETE' });
+      await loadProducts();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+
+  /* ================= SAVE PRODUCT (PATCH) ================= */
+
+  mSave.addEventListener('click', async () => {
+    if (!CURRENT_PRODUCT) return;
+
+    const body = {
+      name: mName.value.trim(),
+      unit: mUnit.value.trim(),
+      category: mCategory.value.trim(),
+      supplier_id: Number(mSupplier.value),
+      active: mActive.checked
+    };
+
+    try {
+      await api(`/api/admin/products/${CURRENT_PRODUCT.id}`, {
+        method: 'PATCH',
+        body
+      });
+
+      closeModal();
+      await loadProducts();
+
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+
+  /* ================= REQUISITIONS ================= */
+
+  async function loadRequisitions() {
+    const data = await api('/api/admin/requisitions');
+    const box = $('#requisitions');
+    box.innerHTML = '';
+
+    (data.requisitions || []).forEach(r => {
+      const row = el('div', { className: 'card spaced' },
+        el('div', {}, `#${r.id} — ${r.user_name || 'сотрудник'}`),
+        el('div', { className: 'muted' }, r.created_at),
+
+        el('button', {
+          className: 'btn',
+          type: 'button',
+          onclick: () => openReq(r.id)
+        }, 'Открыть')
+      );
+
+      box.appendChild(row);
+    });
+  }
+
+  async function openReq(id) {
+    try {
+      const d = await api(`/api/admin/requisitions/${id}`);
+
+      alert(
+        (d.orders || [])
+          .map(o =>
+            `• ${o.supplier.name}\n` +
+            o.items.map(i => `  - ${i.product_name}: ${i.qty_final} ${i.unit}`).join('\n')
+          )
+          .join('\n\n') || 'Пусто'
+      );
 
     } catch (e) {
       alert(e.message);
@@ -155,171 +292,74 @@
   }
 
 
-  /* ================= Products ================= */
+  /* ================= ADD NEW SUPPLIER / PRODUCT ================= */
 
-  async function loadProducts() {
-    const data = await api('/api/admin/products');
+  $('#btnAddSup')?.addEventListener('click', async () => {
+    const name = $('#supName').value.trim();
+    const note = $('#supNote').value.trim();
 
-    boxProd.innerHTML = '';
+    if (!name) return alert('Введите название');
 
-    (data.products || []).forEach(p => {
+    try {
+      await api('/api/admin/suppliers', {
+        method: 'POST',
+        body: { name, contact_note: note }
+      });
 
-      const row = el('div', { className:'card spaced' },
-        el('div', {}, `#${p.id} — ${p.name} (${p.unit}), пост.: ${p.supplier_name}`),
-        p.category ? el('div', { className:'muted' }, `Категория: ${p.category}`) : '',
-        btn('Изменить', () => editProduct(p)),
-        btn('Удалить', async () => {
-          if (!confirm(`Удалить товар "${p.name}"?`)) return;
-          try{
-            await api(`/api/admin/products/${p.id}`, { method:'DELETE' });
-            await loadProducts();
-          } catch(e){ alert(e.message); }
-        })
-      );
+      $('#supName').value = '';
+      $('#supNote').value = '';
 
-      boxProd.appendChild(row);
-    });
-  }
+      await loadSuppliers();
+
+    } catch (e) { alert(e.message); }
+  });
 
 
-  async function editProduct(p) {
+  $('#btnAddProd')?.addEventListener('click', async () => {
+    const name = $('#prodName').value.trim();
+    const unit = $('#prodUnit').value.trim();
+    const category = $('#prodCategory').value.trim() || 'Общее';
+    const supplier_id = Number($('#prodSupplierId').value);
 
-  const name = prompt('Название товара:', p.name);
-  if (!name) return;
+    if (!name) return alert('Введите название');
+    if (!unit) return alert('Введите ед. изм');
+    if (!Number.isFinite(supplier_id)) return alert('Введите ID поставщика');
 
-  const unit = prompt('Ед. изм.:', p.unit);
-  if (!unit) return;
+    try {
+      await api('/api/admin/products', {
+        method: 'POST',
+        body: { name, unit, category, supplier_id }
+      });
 
-  const category = prompt('Категория:', p.category || 'Общее');
+      $('#prodName').value = '';
+      $('#prodUnit').value = '';
+      $('#prodCategory').value = '';
+      $('#prodSupplierId').value = '';
 
-  let supplierInput = prompt('ID поставщика:', p.supplier_id);
-  if (supplierInput === null) return;
+      await loadProducts();
 
-  supplierInput = supplierInput.trim();
-  if (supplierInput === '') supplierInput = p.supplier_id;
-
-  const supplier_id = Number(supplierInput);
-  if (!Number.isFinite(supplier_id) || supplier_id <= 0) {
-    alert('Неверный ID поставщика');
-    return;
-  }
-
-  const active = confirm('Товар активен? (OK = Да)');
-
-  try {
-    await api(`/api/admin/products/${p.id}`, {
-      method:'PATCH',
-      body:{ name, unit, category, supplier_id, active }
-    });
-
-    await loadProducts();
-
-  } catch (e) {
-    alert(e.message);
-  }
-}
-
-  /* ================= Requisitions ================= */
-
-  async function loadRequisitions() {
-    const data = await api('/api/admin/requisitions');
-
-    boxReq.innerHTML = '';
-
-    (data.requisitions || []).forEach(r => {
-
-      const row = el('div',{ className:'card spaced' },
-        el('div',{}, `#${r.id} — ${r.user_name || 'сотрудник'} — ${r.created_at}`),
-        btn('Открыть', async () => {
-          try {
-            const det = await api(`/api/admin/requisitions/${r.id}`);
-            const orders = det.orders || [];
-
-            alert(
-              orders.length
-                ? orders.map(o =>
-                    `• ${o.supplier.name}\n` +
-                    o.items.map(i => `  - ${i.product_name}: ${i.qty_final} ${i.unit||''}`).join('\n')
-                  ).join('\n\n')
-                : 'Пусто'
-            );
-
-          } catch (e) { alert(e.message); }
-        })
-      );
-
-      boxReq.appendChild(row);
-    });
-  }
+    } catch (e) { alert(e.message); }
+  });
 
 
-  /* ================= Boot ================= */
+  /* ================= BOOT ================= */
 
   async function boot() {
-
     if (!TG_INIT) {
-      boxWarn.style.display = 'block';
-      boxWarn.innerHTML = `<b>Ошибка: Missing initData</b><br/>Откройте админку через WebApp.`;
+      $('#warning').style.display = 'block';
+      $('#warning').innerHTML = 'Ошибка: initData не найден. Откройте Mini App через Telegram.';
       return;
     }
 
-    // Add Supplier
-    $('#btnAddSup')?.addEventListener('click', async ()=>{
-      const name = $('#supName').value.trim();
-      const note = $('#supNote').value.trim();
-
-      if (name.length < 2) return alert('Название слишком короткое');
-
-      try {
-        await api('/api/admin/suppliers', {
-          method:'POST',
-          body:{ name, contact_note:note }
-        });
-
-        $('#supName').value = '';
-        $('#supNote').value = '';
-
-        await loadSuppliers();
-
-      } catch(e) { alert(e.message); }
-    });
-
-    // Add Product
-    $('#btnAddProd')?.addEventListener('click', async ()=>{
-      const name = $('#prodName').value.trim();
-      const unit = $('#prodUnit').value.trim();
-      const category = $('#prodCategory').value.trim() || 'Общее';
-      const supplier_id = Number($('#prodSupplierId').value);
-
-      if (name.length < 2) return alert('Название слишком короткое');
-      if (!unit) return alert('Ед. изм. обязательна');
-      if (!Number.isFinite(supplier_id)) return alert('Неверный ID поставщика');
-
-      try {
-        await api('/api/admin/products', {
-          method:'POST',
-          body:{ name, unit, category, supplier_id }
-        });
-
-        $('#prodName').value='';
-        $('#prodUnit').value='';
-        $('#prodCategory').value='';
-        $('#prodSupplierId').value='';
-
-        await loadProducts();
-
-      } catch(e) { alert(e.message); }
-    });
-
-    await Promise.all([
-      loadSuppliers(),
-      loadProducts(),
-      loadRequisitions()
-    ]);
+    await loadSuppliers();
+    await loadProducts();
+    await loadRequisitions();
   }
 
+  try {
+    window.Telegram?.WebApp?.ready();
+  } catch {}
 
-  try { window.Telegram?.WebApp?.ready?.(); } catch{}
-  boot().catch(e=>alert('Ошибка загрузки: '+e.message));
+  boot();
 
 })();

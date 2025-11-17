@@ -7,32 +7,78 @@
   <link rel="stylesheet" href="./admin.css"/>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
+
 <body>
+
   <div class="container">
     <h2>Админ-панель</h2>
 
     <div id="warning" class="card" style="display:none"></div>
 
+    <!-- ====================== Поставщики ====================== -->
+
     <h3>Поставщики</h3>
+
     <div class="card spaced">
       <input id="supName" placeholder="Название поставщика" />
-      <input id="supNote" placeholder="Комментарий/контакты (необязательно)" />
+      <input id="supNote" placeholder="Комментарий (необязательно)" />
       <button id="btnAddSup" class="btn" type="button">Добавить поставщика</button>
     </div>
+
     <div id="suppliers" class="list"></div>
 
+    <!-- ====================== Товары ====================== -->
+
     <h3>Товары</h3>
+
     <div class="card spaced">
       <input id="prodName" placeholder="Название товара" />
-      <input id="prodUnit" placeholder="Ед. изм. (шт, кг, л…)" style="width:130px" />
-      <input id="prodCategory" placeholder="Категория (опц.)" />
-      <input id="prodSupplierId" placeholder="ID поставщика" style="width:140px" />
+      <input id="prodUnit" placeholder="Ед. изм. (шт, кг…)" style="width: 130px"/>
+      <input id="prodCategory" placeholder="Категория" />
+      <input id="prodSupplierId" placeholder="ID поставщика" style="width:140px"/>
       <button id="btnAddProd" class="btn" type="button">Добавить товар</button>
     </div>
+
     <div id="products" class="list"></div>
+
+    <!-- ====================== Заявки ====================== -->
 
     <h3>Заявки</h3>
     <div id="requisitions" class="list"></div>
+  </div>
+
+  <!-- ==================================================== -->
+  <!-- =============== МОДАЛКА РЕДАКТИРОВАНИЯ ============= -->
+  <!-- ==================================================== -->
+
+  <div id="prodModal" class="modal">
+    <div class="modal-content">
+
+      <h3>Редактировать товар</h3>
+
+      <label>Название:</label>
+      <input id="mProdName" type="text">
+
+      <label>Ед. измерения:</label>
+      <input id="mProdUnit" type="text">
+
+      <label>Категория:</label>
+      <input id="mProdCategory" type="text">
+
+      <label>Поставщик:</label>
+      <select id="mProdSupplier"></select>
+
+      <label class="row">
+        <input type="checkbox" id="mProdActive">
+        <span>Активный товар</span>
+      </label>
+
+      <div class="modal-buttons">
+        <button id="mSave" class="btn">Сохранить</button>
+        <button id="mCancel" class="btn btn-secondary">Отмена</button>
+      </div>
+
+    </div>
   </div>
 
   <script src="./admin.js" defer></script>
