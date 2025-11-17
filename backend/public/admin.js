@@ -1,17 +1,33 @@
-/* ========= ADMIN PANEL SCRIPT ========= */
+/* ============================================
+   ADMIN PANEL — FULL WORKING VERSION
+   ============================================ */
 
-const API = (url, method='GET', data=null) =>
-  fetch(url, {
+/* === Telegram InitData === */
+function tg() {
+  return (window.Telegram?.WebApp?.initData || "");
+}
+
+/* === Unified API Wrapper with initData === */
+async function API(url, method = 'GET', data = null) {
+  const r = await fetch(url, {
     method,
-    headers: { "Content-Type":"application/json" },
-    body: data ? JSON.stringify(data) : null,
-  }).then(r => r.json());
+    headers: {
+      "Content-Type": "application/json",
+      "X-TG-INIT-DATA": tg()
+    },
+    body: data ? JSON.stringify(data) : null
+  });
 
-/* ========= LOAD SUPPLIERS ========= */
+  return r.json().catch(() => ({ ok: false, error: "Invalid JSON" }));
+}
+
+/* =====================================================
+   SUPPLIERS
+   ===================================================== */
 
 async function loadSuppliers() {
   const r = await API('/api/admin/suppliers');
-  if (!r.ok) return;
+  if (!r.ok) return console.warn("loadSuppliers:", r.error);
 
   const box = document.getElementById('suppliers');
   box.innerHTML = "";
@@ -28,8 +44,9 @@ async function loadSuppliers() {
 
       <div class="accordion-body" style="display:none">
         <div><b>Контакт:</b> ${s.contact_note || '—'}</div>
+
         <div class="actions-row">
-          <button onclick="editSupplier(${s.id})">Ред.</button>
+          <button onclick="editSupplier(${s.id})">Ред</button>
           <button onclick="deleteSupplier(${s.id})">Удал</button>
         </div>
       </div>
@@ -39,7 +56,6 @@ async function loadSuppliers() {
   });
 }
 
-/* ========= ADD SUPPLIER ========= */
 async function addSupplier() {
   const name = document.getElementById("sup-name").value.trim();
   const note = document.getElementById("sup-note").value.trim();
@@ -60,12 +76,11 @@ async function addSupplier() {
   loadProductFormSuppliers();
 }
 
-/* ========= EDIT SUPPLIER ========= */
 async function editSupplier(id) {
   const name = prompt("Новое название:");
   if (!name) return;
 
-  const note = prompt("Новая заметка (или Enter):", "");
+  const note = prompt("Новая заметка:", "");
 
   const r = await API(`/api/admin/suppliers/${id}`, 'PATCH', {
     name,
@@ -78,7 +93,6 @@ async function editSupplier(id) {
   loadProductFormSuppliers();
 }
 
-/* ========= DELETE SUPPLIER ========= */
 async function deleteSupplier(id) {
   if (!confirm("Удалить поставщика?")) return;
 
@@ -90,13 +104,13 @@ async function deleteSupplier(id) {
 }
 
 
-/* ===========================================================
+/* =====================================================
    CATEGORIES
-   =========================================================== */
+   ===================================================== */
 
 async function loadCategories() {
   const r = await API('/api/admin/categories');
-  if (!r.ok) return;
+  if (!r.ok) return console.warn("loadCategories:", r.error);
 
   const sel = document.getElementById("prod-category");
   sel.innerHTML = "";
@@ -115,18 +129,17 @@ async function loadCategories() {
 }
 
 
-/* ===========================================================
+/* =====================================================
    PRODUCTS
-   =========================================================== */
+   ===================================================== */
 
 async function loadProducts() {
   const r = await API('/api/admin/products');
-  if (!r.ok) return;
+  if (!r.ok) return console.warn("loadProducts:", r.error);
 
   const box = document.getElementById('products');
   box.innerHTML = "";
 
-  // группируем по категориям → поставщикам
   const groups = {};
   r.products.forEach(p => {
     if (!groups[p.category]) groups[p.category] = [];
@@ -153,7 +166,7 @@ async function loadProducts() {
 
       block.innerHTML = `
         <div><b>${p.name}</b> (${p.unit})</div>
-        <div style="margin-top:4px;color:#aaa;font-size:12px;">
+        <div style="font-size:12px;margin-top:4px;color:#999">
           Поставщик: ${p.supplier_name}
         </div>
 
@@ -171,7 +184,6 @@ async function loadProducts() {
   });
 }
 
-/* ========= PRODUCT FORM SUPPLIER SELECT ========= */
 async function loadProductFormSuppliers() {
   const r = await API('/api/admin/suppliers');
   if (!r.ok) return;
@@ -187,7 +199,6 @@ async function loadProductFormSuppliers() {
   });
 }
 
-/* ========= ADD PRODUCT ========= */
 async function addProduct() {
   const name = document.getElementById("prod-name").value.trim();
   const unit = document.getElementById("prod-unit").value.trim();
@@ -203,9 +214,13 @@ async function addProduct() {
 
   if (!name) return alert("Введите название");
   if (!unit) return alert("Введите ед. изм.");
+  if (!category) return alert("Категория обязательна");
 
   const r = await API('/api/admin/products', 'POST', {
-    name, unit, category, supplier_id
+    name,
+    unit,
+    category,
+    supplier_id
   });
 
   if (!r.ok) return alert(r.error);
@@ -218,7 +233,6 @@ async function addProduct() {
   loadCategories();
 }
 
-/* ========= EDIT PRODUCT ========= */
 async function editProduct(id) {
   const name = prompt("Название:");
   if (!name) return;
@@ -246,7 +260,6 @@ async function editProduct(id) {
   loadProductFormSuppliers();
 }
 
-/* ========= DELETE PRODUCT ========= */
 async function deleteProduct(id) {
   if (!confirm("Удалить товар?")) return;
 
@@ -257,7 +270,6 @@ async function deleteProduct(id) {
   loadCategories();
 }
 
-/* ========= ALT SUPPLIERS ========= */
 async function editAlt(id) {
   const sid = prompt("ID альтернативного поставщика:");
   if (!sid) return;
@@ -271,10 +283,14 @@ async function editAlt(id) {
   alert("Добавлено!");
 }
 
-/* ========= Accordion ========= */
+
+/* =====================================================
+   ACCORDION
+   ===================================================== */
+
 function toggleAccordion(el) {
   const body = el.nextElementSibling;
-  const arrow = el.querySelector(".arrow");
+  const arrow = el.querySelector('.arrow');
 
   if (body.style.display === "none") {
     body.style.display = "block";
@@ -285,8 +301,12 @@ function toggleAccordion(el) {
   }
 }
 
-/* ========= INIT ========= */
+
+/* =====================================================
+   INIT
+   ===================================================== */
+
 loadSuppliers();
-loadProductFormSuppliers();
 loadCategories();
+loadProductFormSuppliers();
 loadProducts();
