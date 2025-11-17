@@ -1,176 +1,210 @@
 (() => {
   'use strict';
 
-  /* ---------- Helpers ---------- */
-  const API_BASE = location.origin;
+  const API = location.origin;
 
+  const $ = s => document.querySelector(s);
+  const el = (tag, attrs={}, ...children) => {
+    const e = document.createElement(tag);
+    for (let [k,v] of Object.entries(attrs)) {
+      if (k === "onclick") e.addEventListener("click", v);
+      else if (k === "html") e.innerHTML = v;
+      else e.setAttribute(k, v);
+    }
+    children.forEach(c => e.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
+    return e;
+  };
+
+  /* ======================================================
+      INIT DATA
+  ====================================================== */
   function getInitData() {
-    const tg = window.Telegram && window.Telegram.WebApp;
+    const tg = window.Telegram?.WebApp;
     if (tg?.initData) return tg.initData;
+
     if (tg?.initDataUnsafe) {
       try {
         const p = new URLSearchParams();
         const u = tg.initDataUnsafe;
-        if (u.query_id) p.set('query_id', u.query_id);
-        if (u.user) p.set('user', JSON.stringify(u.user));
-        if (u.start_param) p.set('start_param', u.start_param);
-        if (u.auth_date) p.set('auth_date', String(u.auth_date));
-        if (u.hash) p.set('hash', u.hash);
+        if (u.query_id) p.set("query_id", u.query_id);
+        if (u.user) p.set("user", JSON.stringify(u.user));
+        if (u.auth_date) p.set("auth_date", String(u.auth_date));
+        if (u.hash) p.set("hash", u.hash);
         return p.toString();
       } catch {}
     }
-    return '';
+
+    return "";
   }
 
-  async function api(path, { method = 'GET', body } = {}) {
-    const headers = { 'Content-Type': 'application/json', 'X-TG-INIT-DATA': getInitData() };
-    const res = await fetch(API_BASE + path, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.ok === false) {
-      const msg = (data && data.error) ? data.error : res.statusText;
-      throw new Error(msg);
-    }
-    return data;
+  const INIT = getInitData();
+
+  async function api(path, opts={}) {
+    const o = {
+      method: opts.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-TG-INIT-DATA": INIT
+      }
+    };
+    if (opts.body) o.body = JSON.stringify(opts.body);
+    const r = await fetch(API + path, o);
+    const j = await r.json().catch(()=>({ ok:false, error:"Bad JSON" }));
+    if (!r.ok || j.ok === false) throw new Error(j.error || "API error");
+    return j;
   }
 
-  /* ---------- DOM ---------- */
-  const formBox   = document.getElementById('form');
-  const recoBox   = document.getElementById('reco');
-  const btnReco   = document.getElementById('btnReco');
-  const btnSubmit = document.getElementById('btnSubmit');
-  const resultBox = document.getElementById('result');
+  /* ======================================================
+      LOAD PRODUCTS
+  ====================================================== */
 
-  /** pid -> input element */
-  const inputByPid = new Map();
+  let PRODUCTS = [];
+  let DISABLED_PRODUCTS = new Set();
 
-  function h(tag, attrs = {}, ...children) {
-    const el = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (k === 'class') el.className = v;
-      else if (k === 'for') el.htmlFor = v;
-      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
-      else if (v !== undefined && v !== null) el.setAttribute(k, v);
-    }
-    for (const ch of children) {
-      if (ch == null) continue;
-      if (typeof ch === 'string') el.appendChild(document.createTextNode(ch));
-      else el.appendChild(ch);
-    }
-    return el;
+  async function loadProducts() {
+    const data = await api('/api/products');
+    PRODUCTS = data.products;
+
+    renderProducts();
   }
 
-  /* ---------- UI rendering ---------- */
+  function renderProducts() {
+    const box = $("#productList");
+    box.innerHTML = "";
 
-  function renderGroups(products) {
-    // группируем по category
-    const byCat = new Map();
-    for (const p of products) {
-      const cat = (p.category || 'Без категории').trim();
-      if (!byCat.has(cat)) byCat.set(cat, []);
-      byCat.get(cat).push(p);
-    }
-    // сортировка внутри группы по имени
-    for (const arr of byCat.values()) arr.sort((a,b) => a.name.localeCompare(b.name, 'ru'));
+    PRODUCTS.forEach(p => {
+      const disabled = DISABLED_PRODUCTS.has(p.id);
 
-    const acc = h('div', { class: 'accordion' });
+      const row = el("div", { class:"card" },
+        el("div", {}, `${p.name} (${p.unit})`),
+        el("input", {
+          type:"number",
+          min:"0",
+          placeholder:"Кол-во",
+          id:`qty_${p.id}`,
+          disabled: disabled ? "true" : null,
+          class: disabled ? "disabled-input" : ""
+        })
+      );
 
-    inputByPid.clear();
-
-    for (const [cat, items] of Array.from(byCat.entries()).sort((a,b)=>a[0].localeCompare(b[0], 'ru'))) {
-      const body = h('div', { class: 'group-body' });
-
-      for (const p of items) {
-        const nameText = p.unit ? `${p.name} (${p.unit})` : p.name;
-
-        const qtyInput = h('input', {
-          type: 'number',
-          min: '0',
-          step: 'any',
-          inputmode: 'decimal',
-          'aria-label': `Количество ${p.name}`,
-        });
-
-        inputByPid.set(p.id, qtyInput);
-
-        const row = h(
-          'div',
-          { class: 'item-row' },
-          h('div', { class: 'item-name', title: p.name }, nameText),
-          h('div', { class: 'item-qty' }, qtyInput)
-        );
-
-        body.appendChild(row);
+      if (disabled) {
+        row.classList.add("disabled-card");
       }
 
-      const details = h(
-        'details',
-        {},
-        h('summary', {}, `${cat} — ${items.length}`),
-        body
-      );
-      // по умолчанию можно раскрыть, если групп немного — на твой выбор
-      // details.open = true;
-
-      acc.appendChild(details);
-    }
-
-    formBox.innerHTML = '';
-    formBox.appendChild(acc);
+      box.appendChild(row);
+    });
   }
 
-  /* ---------- Actions ---------- */
+  /* ======================================================
+      SEND REQUISITION
+  ====================================================== */
 
-  async function load() {
-    formBox.innerHTML = '<div class="card">Загрузка...</div>';
-    const { products } = await api('/api/products');
-    // Убираем любые поля поставщика — просто игнорируем supplier_id / supplier_name
-    renderGroups(products || []);
-  }
-
-  btnReco.addEventListener('click', () => {
-    // Заглушка: оставил кнопку для будущей логики рекомендаций
-    // (ты напишешь правила — подключим: например, подставлять значения в inputs)
-    recoBox.innerHTML = '<div class="card">Рекомендации пока не настроены. Напишите правила — подключу.</div>';
-  });
-
-  btnSubmit.addEventListener('click', async () => {
+  $("#btnSend").addEventListener("click", async () => {
     try {
-      btnSubmit.disabled = true;
-
       const items = [];
-      inputByPid.forEach((inp, pid) => {
-        const raw = String(inp.value || '').trim();
-        if (!raw) return;
-        const qty = Number(raw.replace(',', '.'));
-        if (!Number.isFinite(qty) || qty <= 0) return;
-        items.push({ product_id: pid, qty });
+
+      PRODUCTS.forEach(p => {
+        const el = $(`#qty_${p.id}`);
+        if (!el) return;
+        const qty = Number(el.value);
+        if (qty > 0) {
+          items.push({ product_id: p.id, qty });
+        }
       });
 
       if (items.length === 0) {
-        alert('Введите количества хотя бы для одного товара');
+        alert("Вы не указали товары.");
         return;
       }
 
-      const res = await api('/api/requisitions', { method: 'POST', body: { items } });
+      $("#btnSend").disabled = true;
 
-      resultBox.style.display = '';
-      resultBox.innerHTML = `<b>Заявка создана.</b><br/>Номер: ${res.id ?? '(см. админ-панель)'}`;
+      await api("/api/requisitions", {
+        method:"POST",
+        body:{ items }
+      });
 
-      // очистка
-      inputByPid.forEach(inp => inp.value = '');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (e) {
-      alert('Ошибка: ' + e.message);
+      alert("Заявка отправлена!");
+
+      // очистить поля
+      PRODUCTS.forEach(p => {
+        const el = $(`#qty_${p.id}`);
+        if (el) el.value = "";
+      });
+
+      await loadActiveOrders();
+      await loadProducts();
+    } catch(e) {
+      alert("Ошибка: " + e.message);
     } finally {
-      btnSubmit.disabled = false;
+      $("#btnSend").disabled = false;
     }
   });
 
-  /* ---------- Init ---------- */
-  try { window.Telegram?.WebApp?.ready?.(); } catch {}
-  load().catch(e => { formBox.innerHTML = '<div class="card error">Ошибка: ' + e.message + '</div>'; });
+  /* ======================================================
+      ACTIVE ORDERS
+  ====================================================== */
+
+  async function loadActiveOrders() {
+    const data = await api("/api/my-orders");
+    const orders = data.orders;
+
+    // Собираем список product_id, которые находятся в активных заявках
+    DISABLED_PRODUCTS = new Set();
+    orders.forEach(o => {
+      o.items.forEach(it => DISABLED_PRODUCTS.add(it.product_id));
+    });
+
+    renderProducts();
+    renderActiveOrders(orders);
+  }
+
+  function renderActiveOrders(orders) {
+    const box = $("#activeOrders");
+    box.innerHTML = "";
+
+    if (orders.length === 0) {
+      box.innerHTML = "<div class='muted'>Нет активных заявок</div>";
+      return;
+    }
+
+    orders.forEach(o => {
+      const itemsHtml = o.items
+        .map(it => `• ${it.name} — ${it.qty} ${it.unit}`)
+        .join("<br>");
+
+      const card = el("div", { class:"card" },
+        el("div", { class:"bold" }, `📦 ${o.supplier_name}`),
+        el("div", { html: itemsHtml, style:"margin:8px 0;" }),
+        el("button", {
+          class:"btn",
+          onclick:()=> markDelivered(o.supplier_id)
+        }, "Получено")
+      );
+
+      box.appendChild(card);
+    });
+  }
+
+  async function markDelivered(supplierId) {
+    try {
+      await api(`/api/my-orders/${supplierId}/delivered`, { method:"POST" });
+
+      await loadActiveOrders();
+      await loadProducts();
+    } catch(e) {
+      alert("Ошибка: " + e.message);
+    }
+  }
+
+  /* ======================================================
+      INIT
+  ====================================================== */
+
+  (async () => {
+    try { window.Telegram?.WebApp?.ready(); } catch {}
+    await loadActiveOrders();
+    await loadProducts();
+  })();
+
 })();
