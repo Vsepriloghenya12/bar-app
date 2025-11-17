@@ -184,35 +184,40 @@
 
   async function editProduct(p) {
 
-    const name = prompt('Название товара:', p.name);
-    if (!name) return;
+  const name = prompt('Название товара:', p.name);
+  if (!name) return;
 
-    const unit = prompt('Ед. изм.:', p.unit);
-    if (!unit) return;
+  const unit = prompt('Ед. изм.:', p.unit);
+  if (!unit) return;
 
-    const category = prompt('Категория:', p.category || 'Общее');
+  const category = prompt('Категория:', p.category || 'Общее');
 
-    const supplier_id = Number(prompt('ID поставщика:', p.supplier_id));
-    if (!Number.isFinite(supplier_id)) {
-      alert('Неверный ID поставщика');
-      return;
-    }
+  let supplierInput = prompt('ID поставщика:', p.supplier_id);
+  if (supplierInput === null) return;
 
-    const active = confirm('Товар активен? (OK = Да)');
+  supplierInput = supplierInput.trim();
+  if (supplierInput === '') supplierInput = p.supplier_id;
 
-    try {
-      await api(`/api/admin/products/${p.id}`, {
-        method:'PATCH',
-        body:{ name, unit, category, supplier_id, active }
-      });
-
-      await loadProducts();
-
-    } catch (e) {
-      alert(e.message);
-    }
+  const supplier_id = Number(supplierInput);
+  if (!Number.isFinite(supplier_id) || supplier_id <= 0) {
+    alert('Неверный ID поставщика');
+    return;
   }
 
+  const active = confirm('Товар активен? (OK = Да)');
+
+  try {
+    await api(`/api/admin/products/${p.id}`, {
+      method:'PATCH',
+      body:{ name, unit, category, supplier_id, active }
+    });
+
+    await loadProducts();
+
+  } catch (e) {
+    alert(e.message);
+  }
+}
 
   /* ================= Requisitions ================= */
 
