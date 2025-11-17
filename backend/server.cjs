@@ -248,44 +248,36 @@ function getAlternativesForProduct(pid) {
 /* ==================== SUPPLIERS ======================= */
 /* ===================================================== */
 
-app.get('/api/me', auth, (req,res)=>{
-  console.log("DEBUG /api/me req.user =", req.user);
-
-  res.json({
-    ok:true,
-    user:{
-      id:req.user.tg_user_id,
-      name:req.user.name,
-      role:req.user.role
-    }
-  });
-});
-
-app.post('/api/admin/suppliers', auth, admin, (req,res)=>{
+/* LIST SUPPLIERS — ПРОПАВШИЙ МАРШРУТ */
+app.get('/api/admin/suppliers', auth, admin, (req,res)=>{
   try {
-    console.log("SUPPLIER POST BODY =", req.body);
-
-    const { name, contact_note = '' } = req.body || {};
-
-    if (!name || name.trim().length < 2)
-      return res.status(400).json({ ok:false, error:'Название короткое' });
-
-    const r = db.prepare(`
-      INSERT INTO suppliers (name, contact_note, active)
-      VALUES (?,?,1)
-    `).run(name.trim(), contact_note.trim());
-
-    const row = db.prepare(`SELECT * FROM suppliers WHERE id=?`)
-      .get(r.lastInsertRowid);
-
-    return res.json({ ok:true, supplier: row });
-
+    const rows = db.prepare(`
+      SELECT *
+      FROM suppliers
+      ORDER BY active DESC, name
+    `).all();
+    res.json({ ok:true, suppliers: rows });
   } catch(e) {
-    console.error("SUPPLIER ADD ERROR:", e);
-    return res.status(500).json({ ok:false, error:String(e.message || e) });
+    res.status(500).json({ ok:false, error:String(e.message || e) });
   }
 });
 
+app.post('/api/admin/suppliers', auth, admin, (req,res)=>{
+  const { name, contact_note='' } = req.body || {};
+
+  if (!name || name.trim().length < 2)
+    return res.status(400).json({ ok:false, error:'Название короткое' });
+
+  const r = db.prepare(`
+    INSERT INTO suppliers (name,contact_note,active)
+    VALUES (?,?,1)
+  `).run(name.trim(), contact_note);
+
+  const row = db.prepare(`SELECT * FROM suppliers WHERE id=?`)
+    .get(r.lastInsertRowid);
+
+  res.json({ ok:true, supplier: row });
+});
 /* ===================================================== */
 /* ====================== PRODUCTS ====================== */
 /* ===================================================== */
