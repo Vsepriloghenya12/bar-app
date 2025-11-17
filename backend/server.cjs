@@ -258,6 +258,48 @@ function getProductAlternatives(pid){
     ORDER BY s.name
   `).all(pid);
 }
+function buildRequisitionMessage(reqId, userName){
+  const head = db.prepare(`
+    SELECT id, created_at
+    FROM requisitions
+    WHERE id = ?
+  `).get(reqId);
+
+  const orders = db.prepare(`
+    SELECT o.id AS order_id,
+           s.name AS supplier_name
+    FROM orders o
+    JOIN suppliers s ON s.id = o.supplier_id
+    WHERE o.requisition_id = ?
+    ORDER BY s.name
+  `).all(reqId);
+
+  const itemsStmt = db.prepare(`
+    SELECT p.name AS product_name,
+           p.unit,
+           oi.qty_requested AS qty
+    FROM order_items oi
+    JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id = ?
+    ORDER BY p.name
+  `);
+
+  let text =
+    `🧾 <b>Заявка #${reqId}</b> от ${userName}\n` +
+    `Дата: ${head?.created_at || ""}\n\n`;
+
+  for (const o of orders){
+    text += `🛒 <b>${o.supplier_name}</b>\n`;
+
+    const items = itemsStmt.all(o.order_id);
+    for (const it of items){
+      text += ` • ${it.product_name} — ${it.qty} ${it.unit || ""}\n`;
+    }
+    text += "\n";
+  }
+
+  return text.trim();
+}
 
 /* -------------------------------------------------- */
 /* SUPPLIERS API */
@@ -571,17 +613,26 @@ app.post('/api/requisitions', auth, async (req,res)=>{
     return reqId;
   });
 
-  try{
+  try {
     const id = trx();
 
-    const msg = `🧾 <b>Новая заявка</b>\nСотрудник: ${req.user.name || req.user.tg_user_id}\nID: ${id}`;
-    notifyAdmins(msg);
+    // Формируем подробное сообщение
+    const msg = buildRequisitionMessage(
+      id,
+      req.user.name || req.user.tg_user_id
+    );
 
-    res.json({ ok:true, requisition_id:id });
+    try {
+      notifyAdmins(msg);   // отправка в Telegram
+    } catch (err) {
+      console.warn("Telegram notify error:", err?.message || err);
+    }
 
-  }catch(e){
-    res.status(400).json({ ok:false, error:String(e.message) });
-  }
+    res.json({ ok: true, requisition_id: id });
+
+} catch (e) {
+    res.status(400).json({ ok: false, error: String(e.message) });
+}
 });
 
 /* -------------------------------------------------- */
