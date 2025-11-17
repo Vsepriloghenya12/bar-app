@@ -1,4 +1,4 @@
-/* ================== БАЗОВЫЕ СТИЛИ ================== */
+/* ===== Базовые стили ===== */
 
 body {
   margin: 0;
@@ -29,7 +29,7 @@ input, select {
   margin: 12px 0 32px 0;
 }
 
-/* ================== КАРТОЧКИ ================== */
+/* ===== Карточки ===== */
 
 .card {
   background: #fff;
@@ -52,7 +52,7 @@ input, select {
   font-size: 14px;
 }
 
-/* ================== КНОПКИ ================== */
+/* ===== Кнопки ===== */
 
 .btn {
   background: #4086f4;
@@ -77,14 +77,13 @@ input, select {
   background: #ccc;
 }
 
-/* ================== МОДАЛЬНОЕ ОКНО ================== */
+/* ===== Модальное окно ===== */
 
 .modal {
-  display: none;              /* скрыто по умолчанию */
+  display: none;
   position: fixed;
   z-index: 1000;
-  left: 0; top: 0;
-  width: 100%; height: 100%;
+  inset: 0;
 
   background: rgba(0,0,0,0.45);
   backdrop-filter: blur(2px);
@@ -104,7 +103,6 @@ input, select {
   padding: 20px;
   border-radius: 14px;
   box-shadow: 0 3px 12px rgba(0,0,0,0.2);
-
   animation: modalFade 0.15s ease-out;
 }
 
