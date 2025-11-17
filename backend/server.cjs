@@ -248,12 +248,17 @@ function getAlternativesForProduct(pid) {
 /* ==================== SUPPLIERS ======================= */
 /* ===================================================== */
 
-app.get('/api/admin/suppliers', auth, admin, (req,res)=>{
-  const rows = db.prepare(`
-    SELECT * FROM suppliers
-    ORDER BY active DESC, name
-  `).all();
-  res.json({ ok:true, suppliers: rows });
+app.get('/api/me', auth, (req,res)=>{
+  console.log("DEBUG /api/me req.user =", req.user);
+
+  res.json({
+    ok:true,
+    user:{
+      id:req.user.tg_user_id,
+      name:req.user.name,
+      role:req.user.role
+    }
+  });
 });
 
 app.post('/api/admin/suppliers', auth, admin, (req,res)=>{
