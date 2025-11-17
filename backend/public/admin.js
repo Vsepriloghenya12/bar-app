@@ -1,329 +1,185 @@
-(() => {
-  'use strict';
+const API = location.origin;
+const $ = s => document.querySelector(s);
 
-  const API = location.origin;
+async function api(url, method="GET", data=null){
+  const opt = { method, headers:{ "Content-Type":"application/json" } };
+  if (data) opt.body = JSON.stringify(data);
 
-  const $ = sel => document.querySelector(sel);
-  const el = (tag, attrs={}, ...children) => {
-    const e = document.createElement(tag);
-    for (let [k,v] of Object.entries(attrs)) {
-      if (k === "onclick") e.addEventListener("click", v);
-      else if (k === "html") e.innerHTML = v;
-      else e.setAttribute(k, v);
-    }
-    children.forEach(c => e.appendChild(
-      typeof c === "string" ? document.createTextNode(c) : c
-    ));
-    return e;
-  };
+  const r = await fetch(url, opt);
+  const j = await r.json().catch(()=>null);
 
-  /* ================= INIT DATA ================ */
-
-  function getInitData() {
-    const tg = window.Telegram?.WebApp;
-    if (tg?.initData) return tg.initData;
-
-    if (tg?.initDataUnsafe) {
-      try {
-        const p = new URLSearchParams();
-        const u = tg.initDataUnsafe;
-        if (u.query_id) p.set("query_id", u.query_id);
-        if (u.user) p.set("user", JSON.stringify(u.user));
-        if (u.auth_date) p.set("auth_date", String(u.auth_date));
-        if (u.hash) p.set("hash", u.hash);
-        return p.toString();
-      } catch {}
-    }
-
-    return "";
+  if (!r.ok || !j?.ok){
+    throw new Error(j?.error || "Ошибка");
   }
-  const INIT = getInitData();
+  return j;
+}
 
-  async function api(path, opts={}) {
-    const o = {
-      method: opts.method || "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "X-TG-INIT-DATA": INIT
-      }
-    };
-    if (opts.body) o.body = JSON.stringify(opts.body);
-    const r = await fetch(API + path, o);
-    const j = await r.json().catch(()=>({ ok:false, error:"Bad JSON" }));
-    if (!r.ok || j.ok === false) throw new Error(j.error || "API error");
-    return j;
-  }
+/* ------------------------- SUPPLIERS ------------------------- */
 
+async function loadSuppliers(){
+  const box = $("#suppliers");
+  box.innerHTML = "Загрузка...";
 
-  /* ================= DATA HOLDERS ================ */
+  const { suppliers } = await api("/api/admin/suppliers");
 
-  let SUPPLIERS = [];
-  let PRODUCTS = [];
+  box.innerHTML = suppliers.map(s => `
+    <div class="card">
+      <b>${s.id}</b> — ${s.name}
+      <br>Примечание: ${s.contact_note || "-"}
+      <br>Активен: ${s.active ? "да" : "нет"}
+      <br>
+      <button onclick="editSupplier(${s.id})">Ред.</button>
+      <button onclick="deleteSupplier(${s.id})">Удалить</button>
+    </div>
+  `).join("");
+}
 
-  let currentProductId = null;
+async function deleteSupplier(id){
+  if (!confirm("Удалить поставщика?")) return;
+  await api(`/api/admin/suppliers/${id}`, "DELETE");
+  await loadSuppliers();
+}
 
+async function editSupplier(id){
+  const name = prompt("Название:");
+  if (!name) return;
 
-  /* ================= LOAD SUPPLIERS ================ */
+  const note = prompt("Примечание:") || "";
+  const active = confirm("Активен?") ? 1 : 0;
 
-  async function loadSuppliers() {
-    const data = await api('/api/admin/suppliers');
-    SUPPLIERS = data.suppliers;
-
-    // Заполняем выпадающий список для создания товара
-    const sel = $("#newProductSupplier");
-    sel.innerHTML = `<option value="">Основной поставщик...</option>`;
-    SUPPLIERS.forEach(s => {
-      const opt = el("option", { value: s.id }, s.name);
-      sel.appendChild(opt);
-    });
-  }
-
-
-  /* ================= LOAD PRODUCTS ================ */
-
-  async function loadProducts() {
-    const data = await api('/api/admin/products');
-    PRODUCTS = data.products;
-
-    renderProductsList();
-  }
-
-
-  function renderProductsList() {
-    const box = $("#productsList");
-    box.innerHTML = "";
-
-    PRODUCTS.forEach(p => {
-      const card = el("div", { class:"card" },
-        el("div", { class:"bold" }, `${p.name} (${p.unit})`),
-        el("div", {}, `Категория: ${p.category}`),
-        el("div", {}, `Основной поставщик: ${p.supplier_name}`),
-
-        el("div", { class:"row", style:"margin-top:10px;" },
-          el("button", {
-            class:"btn btn-primary",
-            onclick:()=> openEditModal(p.id)
-          }, "Редактировать"),
-
-          el("button", {
-            class:"btn btn-secondary",
-            style:"margin-left:8px;",
-            onclick:()=> deleteProduct(p.id)
-          }, "Удалить")
-        )
-      );
-      box.appendChild(card);
-    });
-  }
-
-
-  /* ================= ADD SUPPLIER ================ */
-
-  $("#btnAddSupplier").addEventListener("click", async ()=>{
-    const name = $("#newSupplierName").value.trim();
-    const note = $("#newSupplierNote").value.trim();
-
-    if (name.length < 2) {
-      alert("Название слишком короткое");
-      return;
-    }
-
-    try {
-      await api('/api/admin/suppliers', {
-        method:"POST",
-        body:{ name, contact_note:note }
-      });
-
-      $("#newSupplierName").value = "";
-      $("#newSupplierNote").value = "";
-
-      await loadSuppliers();
-      await loadProducts();
-    } catch(e) {
-      alert("Ошибка: " + e.message);
-    }
+  await api(`/api/admin/suppliers/${id}`, "PATCH", {
+    name, contact_note: note, active
   });
 
+  loadSuppliers();
+}
 
-  /* ================= ADD PRODUCT ================ */
+/* create supplier */
+$("#sup_add").onclick = async ()=>{
+  const name = $("#sup_name").value.trim();
+  const note = $("#sup_note").value.trim();
 
-  $("#btnAddProduct").addEventListener("click", async ()=>{
-    const name = $("#newProductName").value.trim();
-    const unit = $("#newProductUnit").value.trim();
-    const category = $("#newProductCategory").value.trim() || "Общее";
-    const supplier_id = Number($("#newProductSupplier").value);
+  if (!name) return alert("Введите название");
 
-    if (name.length < 2) return alert("Слишком короткое название");
-    if (!unit) return alert("Ед. изм. обязательна");
-    if (!supplier_id) return alert("Выберите основного поставщика");
+  try{
+    await api("/api/admin/suppliers", "POST", {
+      name, contact_note: note
+    });
+    $("#sup_name").value="";
+    $("#sup_note").value="";
+    loadSuppliers();
 
-    try {
-      await api('/api/admin/products', {
-        method:"POST",
-        body:{ name, unit, category, supplier_id }
-      });
+  }catch(e){
+    alert(e.message);
+  }
+};
 
-      $("#newProductName").value = "";
-      $("#newProductUnit").value = "";
-      $("#newProductCategory").value = "";
-      $("#newProductSupplier").value = "";
+/* ------------------------- PRODUCTS ------------------------- */
 
-      await loadProducts();
-    } catch(e) {
-      alert("Ошибка: " + e.message);
-    }
+async function loadProducts(){
+  const box = $("#products");
+  box.innerHTML = "Загрузка...";
+
+  const { products } = await api("/api/admin/products");
+
+  box.innerHTML = products.map(p => `
+    <div class="card">
+      <b>${p.id}</b> — ${p.name}
+      <br>${p.unit}, ${p.category}
+      <br>Поставщик: ${p.supplier_id} (${p.supplier_name})
+      <br>Активен: ${p.active ? "да" : "нет"}
+      <br>
+
+      <button onclick="editProduct(${p.id})">Ред.</button>
+      <button onclick="deleteProduct(${p.id})">Удалить</button>
+      <button onclick="editAlts(${p.id})">Альтернативные</button>
+    </div>
+  `).join("");
+}
+
+async function deleteProduct(id){
+  if (!confirm("Удалить товар?")) return;
+  await api(`/api/admin/products/${id}`, "DELETE");
+  loadProducts();
+}
+
+async function editProduct(id){
+  const name = prompt("Название:");
+  if (!name) return;
+
+  const unit = prompt("Ед. изм:");
+  if (!unit) return;
+
+  const category = prompt("Категория:") || "Общее";
+  const supplier_id = Number(prompt("ID поставщика:"));
+  if (!supplier_id) return;
+
+  const active = confirm("Активен?") ? 1 : 0;
+
+  await api(`/api/admin/products/${id}`, "PATCH", {
+    name, unit, category, supplier_id, active
   });
 
+  loadProducts();
+}
 
-  /* ================= EDIT PRODUCT MODAL ================ */
+/* Add product */
+$("#p_add").onclick = async ()=>{
+  const name = $("#p_name").value.trim();
+  const unit = $("#p_unit").value.trim();
+  const category = $("#p_cat").value.trim();
+  const supplier_id = Number($("#p_sup").value);
 
-  async function openEditModal(id) {
-    currentProductId = id;
+  if (!name || !unit || !supplier_id){
+    return alert("Заполните все поля.");
+  }
 
-    const p = PRODUCTS.find(x => x.id === id);
-    if (!p) return;
-
-    $("#editName").value = p.name;
-    $("#editUnit").value = p.unit;
-    $("#editCategory").value = p.category;
-
-    // Загружаем список всех поставщиков в выпадающий список
-    const select = $("#editSupplier");
-    select.innerHTML = "";
-    SUPPLIERS.forEach(s => {
-      const opt = el("option", { value:s.id }, s.name);
-      if (s.id === p.supplier_id) opt.selected = true;
-      select.appendChild(opt);
+  try{
+    await api("/api/admin/products","POST",{
+      name, unit, category, supplier_id
     });
 
-    // Загружаем альтернативные поставщики
-    await loadAlternatives(id);
+    $("#p_name").value="";
+    $("#p_unit").value="";
+    $("#p_cat").value="Общее";
+    $("#p_sup").value="";
 
-    $("#editModal").classList.remove("hidden");
+    loadProducts();
+  }catch(e){
+    alert(e.message);
+  }
+};
+
+/* ---------------- ALTERNATIVE SUPPLIERS ---------------- */
+
+async function editAlts(pid){
+  const { alternatives } = await api(`/api/admin/products/${pid}/alternatives`);
+
+  const list = alternatives.map(a=>`${a.supplier_id} — ${a.name}`).join("\n");
+
+  const choice = prompt(
+    `Альтернативные поставщики:\n${list}\n\n` +
+    `1. Ввести ID поставщика чтобы ДОБАВИТЬ\n` +
+    `2. Или ввести "-ID" чтобы УДАЛИТЬ`
+  );
+
+  if (!choice) return;
+
+  if (choice.startsWith("-")){
+    const id = Number(choice.slice(1));
+    if (id) await api(`/api/admin/products/${pid}/alternatives/${id}`, "DELETE");
+  }
+  else {
+    const id = Number(choice);
+    if (id) await api(`/api/admin/products/${pid}/alternatives`, "POST", { supplier_id:id });
   }
 
+  alert("Готово");
+}
 
-  $("#btnCloseModal").addEventListener("click", ()=>{
-    currentProductId = null;
-    $("#editModal").classList.add("hidden");
-  });
+/* -------------------------------------------------- */
+/* INIT */
+/* -------------------------------------------------- */
 
-
-  /* ================= LOAD ALTERNATIVES ================ */
-
-  async function loadAlternatives(productId) {
-    const data = await api(`/api/admin/products/${productId}/alternatives`);
-    const list = $("#altSuppliersList");
-    list.innerHTML = "";
-
-    if (data.alternatives.length === 0) {
-      list.innerHTML = `<div class="muted">Нет альтернативных поставщиков</div>`;
-      return;
-    }
-
-    data.alternatives.forEach(a => {
-      const row = el("div", { class:"row", style:"margin:4px 0;" },
-        el("div", {}, a.name),
-        el("button", {
-          class:"btn btn-secondary",
-          style:"margin-left:auto;",
-          onclick:()=> removeAlternative(productId, a.supplier_id)
-        }, "Удалить")
-      );
-
-      list.appendChild(row);
-    });
-  }
-
-
-  /* ================= ADD ALTERNATIVE ================= */
-
-  $("#btnAddAltSupplier").addEventListener("click", async ()=>{
-    if (!currentProductId) return;
-
-    // Показываем список доступных поставщиков
-    const ids = SUPPLIERS.map(s => `${s.id} — ${s.name}`).join("\n");
-    const answer = prompt(
-      "Введите ID альтернативного поставщика:\n\n" + ids,
-      ""
-    );
-    if (!answer) return;
-
-    const sid = Number(answer);
-    if (!sid) return alert("Некорректный ID");
-
-    try {
-      await api(`/api/admin/products/${currentProductId}/alternatives`, {
-        method:"POST",
-        body:{ supplier_id: sid }
-      });
-
-      await loadAlternatives(currentProductId);
-    } catch(e) {
-      alert("Ошибка: " + e.message);
-    }
-  });
-
-
-  /* ================= REMOVE ALTERNATIVE =============== */
-
-  async function removeAlternative(productId, supplierId) {
-    try {
-      await api(`/api/admin/products/${productId}/alternatives/${supplierId}`, {
-        method:"DELETE"
-      });
-      await loadAlternatives(productId);
-    } catch(e) {
-      alert("Ошибка: " + e.message);
-    }
-  }
-
-
-  /* ================= SAVE PRODUCT ================= */
-
-  $("#btnSaveProduct").addEventListener("click", async ()=>{
-    if (!currentProductId) return;
-
-    const name = $("#editName").value.trim();
-    const unit = $("#editUnit").value.trim();
-    const category = $("#editCategory").value.trim();
-    const supplier_id = Number($("#editSupplier").value);
-
-    try {
-      await api(`/api/admin/products/${currentProductId}`, {
-        method:"PATCH",
-        body:{ name, unit, category, supplier_id }
-      });
-
-      $("#editModal").classList.add("hidden");
-
-      await loadProducts();
-    } catch(e) {
-      alert("Ошибка: " + e.message);
-    }
-  });
-
-
-  /* ================= DELETE PRODUCT ================= */
-
-  async function deleteProduct(id) {
-    if (!confirm("Удалить товар?")) return;
-
-    try {
-      await api(`/api/admin/products/${id}`, { method:"DELETE" });
-      await loadProducts();
-    } catch(e) {
-      alert("Ошибка: " + e.message);
-    }
-  }
-
-
-  /* ================= INIT ================= */
-
-  (async ()=>{
-    try { window.Telegram?.WebApp?.ready(); } catch {}
-    await loadSuppliers();
-    await loadProducts();
-  })();
-
-})();
+loadSuppliers();
+loadProducts();

@@ -19,7 +19,7 @@ dotenv.config({ override: true });
 const app = express();
 
 /* -------------------------------------------------- */
-/* SECURITY / BASIC */
+/* BASIC SECURITY */
 /* -------------------------------------------------- */
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -28,13 +28,11 @@ app.use(helmet({
 app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan("dev"));
-
 app.use(cors({
   origin: "*",
   methods: ["GET","POST","PATCH","DELETE","OPTIONS"],
   allowedHeaders: ["Content-Type","X-TG-INIT-DATA"]
 }));
-
 app.options("*", (req,res)=>{
   res.setHeader("Access-Control-Allow-Origin","*");
   res.setHeader("Access-Control-Allow-Methods","GET,POST,PATCH,DELETE,OPTIONS");
@@ -46,16 +44,16 @@ app.options("*", (req,res)=>{
 /* DATABASE */
 /* -------------------------------------------------- */
 let db;
-let migrate = ()=>{};
+let migrate=()=>{};
 
-async function loadDb() {
-  try { ({ db, migrate } = require("./db")); return; }
+async function loadDb(){
+  try { ({ db, migrate } = require('./db')); return; }
   catch(e){}
 
   const Database = require("better-sqlite3");
-  const file = process.env.SQLITE_PATH || path.resolve(__dirname, "../data.sqlite");
-
+  const file = process.env.SQLITE_PATH || path.resolve(__dirname,"../data.sqlite");
   fs.mkdirSync(path.dirname(file), { recursive:true });
+
   db = new Database(file);
   db.pragma("foreign_keys = ON");
 
@@ -130,34 +128,41 @@ async function loadDb() {
 /* -------------------------------------------------- */
 /* AUTH */
 /* -------------------------------------------------- */
-const DEV = String(process.env.DEV_ALLOW_UNSAFE||"").toLowerCase()==="true";
+
+const DEV = String(process.env.DEV_ALLOW_UNSAFE || "").toLowerCase()==="true";
 const BOT_TOKEN = process.env.BOT_TOKEN || "";
 
-function verifyTelegramInitData(initData, botToken) {
-  try {
+function verifyTelegramInitData(initData, botToken){
+  try{
     const params = new URLSearchParams(initData);
     const hash = params.get("hash");
     if (!hash) return { ok:false, error:"No hash" };
 
-    const pairs = [];
-    params.forEach((v,k)=>{
-      if (k!=='hash') pairs.push(`${k}=${v}`);
-    });
+    const pairs=[];
+    params.forEach((v,k)=>{ if (k!=="hash") pairs.push(`${k}=${v}`); });
     pairs.sort();
-    const check = pairs.join("\n");
 
-    const secret = crypto.createHmac("sha256","WebAppData").update(botToken).digest();
-    const calc = crypto.createHmac("sha256", secret).update(check).digest("hex");
+    const checkStr = pairs.join("\n");
+
+    const secret = crypto.createHmac("sha256","WebAppData")
+      .update(botToken).digest();
+
+    const calc = crypto.createHmac("sha256", secret)
+      .update(checkStr).digest("hex");
 
     if (calc !== hash) return { ok:false, error:"Bad hash" };
 
-    return { ok:true, user: params.get("user") ? JSON.parse(params.get("user")) : null };
-  } catch {
+    return {
+      ok:true,
+      user: params.get("user") ? JSON.parse(params.get("user")) : null
+    };
+
+  }catch{
     return { ok:false, error:"Invalid initData" };
   }
 }
 
-function pickInitData(req) {
+function pickInitData(req){
   return (
     req.header("X-TG-INIT-DATA") ||
     req.body?.initData ||
@@ -166,9 +171,9 @@ function pickInitData(req) {
   );
 }
 
-function ensureUser(id,name,role) {
+function ensureUser(id,name,role){
   let u = db.prepare(`SELECT * FROM users WHERE tg_user_id=?`).get(id);
-  if (!u) {
+  if (!u){
     db.prepare(`
       INSERT INTO users (tg_user_id,name,role)
       VALUES (?,?,?)
@@ -179,8 +184,8 @@ function ensureUser(id,name,role) {
   return u;
 }
 
-function auth(req,res,next) {
-  if (DEV) {
+function auth(req,res,next){
+  if (DEV){
     req.user = ensureUser("dev","Dev User","admin");
     return next();
   }
@@ -192,14 +197,15 @@ function auth(req,res,next) {
   if (!init)
     return res.status(401).json({ ok:false, error:"Missing initData" });
 
-  const v = verifyTelegramInitData(init, BOT_TOKEN);
+  const v = verifyTelegramInitData(init,BOT_TOKEN);
   if (!v.ok)
     return res.status(401).json({ ok:false, error:v.error });
 
   const userId = String(v.user.id);
   const admins = String(process.env.ADMIN_TG_IDS||"")
     .split(",")
-    .map(s=>s.trim());
+    .map(s=>s.trim())
+    .filter(Boolean);
 
   const role = admins.includes(userId) ? "admin" : "staff";
 
@@ -214,9 +220,36 @@ function admin(req,res,next){
 }
 
 /* -------------------------------------------------- */
+/* TELEGRAM NOTIFY */
+/* -------------------------------------------------- */
+async function notifyAdmins(text){
+  const token = process.env.BOT_TOKEN;
+  const ids = String(process.env.ADMIN_TG_IDS||"")
+    .split(",")
+    .map(s=>s.trim())
+    .filter(Boolean);
+
+  if (!token || !ids.length) return;
+
+  for (const id of ids){
+    try{
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`,{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          chat_id:id,
+          text,
+          parse_mode:"HTML"
+        })
+      });
+    }catch{}
+  }
+}
+
+/* -------------------------------------------------- */
 /* HELPERS */
 /* -------------------------------------------------- */
-function getAlternativesForProduct(pid) {
+function getProductAlternatives(pid){
   return db.prepare(`
     SELECT pa.supplier_id, s.name
     FROM product_alternatives pa
@@ -227,8 +260,9 @@ function getAlternativesForProduct(pid) {
 }
 
 /* -------------------------------------------------- */
-/* SUPPLIERS */
+/* SUPPLIERS API */
 /* -------------------------------------------------- */
+
 app.get('/api/admin/suppliers', auth, admin, (req,res)=>{
   const rows = db.prepare(`
     SELECT * FROM suppliers
@@ -238,7 +272,7 @@ app.get('/api/admin/suppliers', auth, admin, (req,res)=>{
 });
 
 app.post('/api/admin/suppliers', auth, admin, (req,res)=>{
-  try {
+  try{
     const { name, contact_note="" } = req.body||{};
     if (!name || name.trim().length < 2)
       return res.status(400).json({ ok:false, error:"Название короткое" });
@@ -252,13 +286,76 @@ app.post('/api/admin/suppliers', auth, admin, (req,res)=>{
       .get(r.lastInsertRowid);
 
     res.json({ ok:true, supplier: row });
-  } catch(e) {
-    res.status(500).json({ ok:false, error:String(e.message||e) });
+
+  }catch(e){
+    res.status(400).json({ ok:false, error:"Поставщик уже существует" });
+  }
+});
+
+app.patch('/api/admin/suppliers/:id', auth, admin, (req,res)=>{
+  const id = Number(req.params.id);
+  const s = db.prepare(`SELECT * FROM suppliers WHERE id=?`).get(id);
+  if (!s) return res.status(404).json({ ok:false, error:"not found" });
+
+  const { name, contact_note, active } = req.body||{};
+  const newName = name!=null ? name.trim() : s.name;
+  const newNote = contact_note!=null ? contact_note.trim() : s.contact_note;
+  const newActive = active!=null ? (active?1:0) : s.active;
+
+  if (!newName || newName.length < 2)
+    return res.status(400).json({ ok:false, error:"Название короткое" });
+
+  try{
+    db.prepare(`
+      UPDATE suppliers
+      SET name=?, contact_note=?, active=?
+      WHERE id=?
+    `).run(newName,newNote,newActive,id);
+
+    const updated = db.prepare(`SELECT * FROM suppliers WHERE id=?`).get(id);
+    res.json({ ok:true, supplier: updated });
+  }catch{
+    res.status(400).json({ ok:false, error:"Поставщик уже существует" });
+  }
+});
+
+app.delete('/api/admin/suppliers/:id', auth, admin, (req,res)=>{
+  const id = Number(req.params.id);
+
+  const trx = db.transaction(()=>{
+    const products = db.prepare(`SELECT id FROM products WHERE supplier_id=?`).all(id).map(x=>x.id);
+
+    if (products.length){
+      const qm = products.map(()=>"?").join(",");
+      db.prepare(`DELETE FROM product_alternatives WHERE product_id IN (${qm})`).run(...products);
+      db.prepare(`DELETE FROM requisition_items WHERE product_id IN (${qm})`).run(...products);
+      db.prepare(`DELETE FROM order_items WHERE product_id IN (${qm})`).run(...products);
+      db.prepare(`DELETE FROM products WHERE id IN (${qm})`).run(...products);
+    }
+
+    const orders = db.prepare(`SELECT id FROM orders WHERE supplier_id=?`).all(id).map(x=>x.id);
+
+    if (orders.length){
+      const qm = orders.map(()=>"?").join(",");
+      db.prepare(`DELETE FROM order_items WHERE order_id IN (${qm})`).run(...orders);
+      db.prepare(`DELETE FROM orders WHERE id IN (${qm})`).run(...orders);
+    }
+
+    db.prepare(`DELETE FROM product_alternatives WHERE supplier_id=?`).run(id);
+    const r = db.prepare(`DELETE FROM suppliers WHERE id=?`).run(id);
+    if (!r.changes) throw new Error("not found");
+  });
+
+  try{
+    trx();
+    res.json({ ok:true });
+  }catch{
+    res.status(400).json({ ok:false, error:"Ошибка удаления" });
   }
 });
 
 /* -------------------------------------------------- */
-/* PRODUCTS */
+/* PRODUCTS API */
 /* -------------------------------------------------- */
 
 app.get('/api/admin/products', auth, admin, (req,res)=>{
@@ -273,59 +370,90 @@ app.get('/api/admin/products', auth, admin, (req,res)=>{
 
 app.post('/api/admin/products', auth, admin, (req,res)=>{
   const { name, unit, category="Общее", supplier_id } = req.body||{};
-  if (!name || name.trim().length < 2)
+  if (!name || name.trim().length<2)
     return res.status(400).json({ ok:false, error:"Название короткое" });
   if (!unit)
     return res.status(400).json({ ok:false, error:"Ед. изм. обязательна" });
 
   const sid = Number(supplier_id);
-  if (!sid) return res.status(400).json({ ok:false, error:"Основной поставщик обязателен" });
+  if (!sid)
+    return res.status(400).json({ ok:false, error:"Основной поставщик обязателен" });
 
   const exists = db.prepare(`SELECT id FROM suppliers WHERE id=?`).get(sid);
   if (!exists)
     return res.status(400).json({ ok:false, error:"Поставщик не найден" });
 
-  const r = db.prepare(`
-    INSERT INTO products (name,unit,category,supplier_id,active)
-    VALUES (?,?,?,?,1)
-  `).run(name.trim(), unit.trim(), category.trim(), sid);
+  try{
+    const r = db.prepare(`
+      INSERT INTO products (name,unit,category,supplier_id,active)
+      VALUES (?,?,?,?,1)
+    `).run(name.trim(), unit.trim(), category.trim(), sid);
 
-  const row = db.prepare(`SELECT * FROM products WHERE id=?`)
-    .get(r.lastInsertRowid);
+    const row = db.prepare(`SELECT * FROM products WHERE id=?`)
+      .get(r.lastInsertRowid);
 
-  res.json({ ok:true, product: row });
+    res.json({ ok:true, product: row });
+
+  }catch{
+    res.status(400).json({ ok:false, error:"Товар уже существует" });
+  }
 });
 
 app.patch('/api/admin/products/:id', auth, admin, (req,res)=>{
   const pid = Number(req.params.id);
   const p = db.prepare(`SELECT * FROM products WHERE id=?`).get(pid);
-  if (!p) return res.status(404).json({ ok:false, error:"Товар не найден" });
+  if (!p) return res.status(404).json({ ok:false, error:"not found" });
 
   const { name, unit, category, supplier_id, active } = req.body||{};
 
   const newName = name!=null ? name.trim() : p.name;
   const newUnit = unit!=null ? unit.trim() : p.unit;
-  const newCategory = category!=null ? category.trim() : p.category;
-  const newSupplier = supplier_id!=null ? Number(supplier_id) : p.supplier_id;
-  const newActive = active!=null ? (active?1:0) : p.active;
+  const newCat  = category!=null ? category.trim() : p.category;
+  const newSup  = supplier_id!=null ? Number(supplier_id) : p.supplier_id;
+  const newAct  = active!=null ? (active?1:0) : p.active;
 
-  if (!newName || newName.length < 2)
+  if (!newName || newName.length<2)
     return res.status(400).json({ ok:false, error:"Название короткое" });
   if (!newUnit)
     return res.status(400).json({ ok:false, error:"Ед. изм. обязательна" });
 
-  const supp = db.prepare(`SELECT id FROM suppliers WHERE id=?`).get(newSupplier);
-  if (!supp)
+  const ex = db.prepare(`SELECT id FROM suppliers WHERE id=?`).get(newSup);
+  if (!ex)
     return res.status(400).json({ ok:false, error:"Поставщик не найден" });
 
-  db.prepare(`
-    UPDATE products
-    SET name=?,unit=?,category=?,supplier_id=?,active=?
-    WHERE id=?
-  `).run(newName,newUnit,newCategory,newSupplier,newActive,pid);
+  try{
+    db.prepare(`
+      UPDATE products
+      SET name=?,unit=?,category=?,supplier_id=?,active=?
+      WHERE id=?
+    `).run(newName,newUnit,newCat,newSup,newAct,pid);
 
-  const updated = db.prepare(`SELECT * FROM products WHERE id=?`).get(pid);
-  res.json({ ok:true, product: updated });
+    const updated = db.prepare(`SELECT * FROM products WHERE id=?`).get(pid);
+    res.json({ ok:true, product: updated });
+
+  }catch{
+    res.status(400).json({ ok:false, error:"Товар уже существует" });
+  }
+});
+
+app.delete('/api/admin/products/:id', auth, admin, (req,res)=>{
+  const pid = Number(req.params.id);
+
+  const trx = db.transaction(()=>{
+    db.prepare(`DELETE FROM product_alternatives WHERE product_id=?`).run(pid);
+    db.prepare(`DELETE FROM requisition_items WHERE product_id=?`).run(pid);
+    db.prepare(`DELETE FROM order_items WHERE product_id=?`).run(pid);
+
+    const r = db.prepare(`DELETE FROM products WHERE id=?`).run(pid);
+    if (!r.changes) throw new Error("not found");
+  });
+
+  try{
+    trx();
+    res.json({ ok:true });
+  }catch{
+    res.status(400).json({ ok:false, error:"Ошибка удаления" });
+  }
 });
 
 /* -------------------------------------------------- */
@@ -334,7 +462,7 @@ app.patch('/api/admin/products/:id', auth, admin, (req,res)=>{
 
 app.get('/api/admin/products/:id/alternatives', auth, admin, (req,res)=>{
   const pid = Number(req.params.id);
-  const rows = getAlternativesForProduct(pid);
+  const rows = getProductAlternatives(pid);
   res.json({ ok:true, alternatives: rows });
 });
 
@@ -345,8 +473,8 @@ app.post('/api/admin/products/:id/alternatives', auth, admin, (req,res)=>{
   if (!pid || !sid)
     return res.status(400).json({ ok:false, error:"bad id" });
 
-  const exists = db.prepare(`SELECT id FROM suppliers WHERE id=?`).get(sid);
-  if (!exists)
+  const ex = db.prepare(`SELECT id FROM suppliers WHERE id=?`).get(sid);
+  if (!ex)
     return res.status(400).json({ ok:false, error:"Поставщик не найден" });
 
   db.prepare(`
@@ -369,29 +497,26 @@ app.delete('/api/admin/products/:id/alternatives/:sid', auth, admin, (req,res)=>
   res.json({ ok:true });
 });
 
-
 /* -------------------------------------------------- */
-/* PUBLIC PRODUCTS FOR STAFF */
+/* PUBLIC PRODUCT LIST */
 /* -------------------------------------------------- */
 
 app.get('/api/products', auth, (req,res)=>{
   const rows = db.prepare(`
-    SELECT id,name,unit,category,supplier_id,active
-    FROM products
+    SELECT * FROM products
     WHERE active=1
     ORDER BY name
   `).all();
   res.json({ ok:true, products: rows });
 });
 
-
 /* -------------------------------------------------- */
 /* REQUISITIONS */
 /* -------------------------------------------------- */
 
-app.post('/api/requisitions', auth, (req,res)=>{
+app.post('/api/requisitions', auth, async (req,res)=>{
   const { items } = req.body||{};
-  if (!Array.isArray(items) || items.length===0)
+  if (!Array.isArray(items) || items.length === 0)
     return res.status(400).json({ ok:false, error:"items required" });
 
   const trx = db.transaction(()=>{
@@ -407,94 +532,60 @@ app.post('/api/requisitions', auth, (req,res)=>{
       VALUES (?,?,?)
     `);
 
-    const insO = db.prepare(`
+    const insOrder = db.prepare(`
       INSERT INTO orders (requisition_id,supplier_id,status)
-      VALUES (?,?, 'pending')
+      VALUES (?,?,'pending')
     `);
 
-    const insOI = db.prepare(`
+    const insOrderItem = db.prepare(`
       INSERT INTO order_items (order_id,product_id,qty_requested)
       VALUES (?,?,?)
     `);
 
-    const map = new Map();
+    const orderMap = new Map();
 
-    for (const it of items) {
+    for (const it of items){
       const pid = Number(it.product_id);
       const qty = Number(it.qty);
+
       if (!pid || !(qty>0))
         throw new Error("Bad item");
 
       const prod = db.prepare(`SELECT supplier_id FROM products WHERE id=?`).get(pid);
-      if (!prod) throw new Error(`Product ${pid} not found`);
+      if (!prod) throw new Error("Product not found");
 
       const sid = prod.supplier_id;
 
       insRI.run(reqId,pid,qty);
 
-      let oid = map.get(sid);
-      if (!oid) {
-        const rO = insO.run(reqId, sid);
+      let oid = orderMap.get(sid);
+      if (!oid){
+        const rO = insOrder.run(reqId,sid);
         oid = Number(rO.lastInsertRowid);
-        map.set(sid, oid);
+        orderMap.set(sid, oid);
       }
 
-      insOI.run(oid, pid, qty);
+      insOrderItem.run(oid,pid,qty);
     }
 
     return reqId;
   });
 
-  try {
+  try{
     const id = trx();
+
+    const msg = `🧾 <b>Новая заявка</b>\nСотрудник: ${req.user.name || req.user.tg_user_id}\nID: ${id}`;
+    notifyAdmins(msg);
+
     res.json({ ok:true, requisition_id:id });
-  } catch(e) {
+
+  }catch(e){
     res.status(400).json({ ok:false, error:String(e.message) });
   }
 });
 
 /* -------------------------------------------------- */
-/* ADMIN VIEW REQUISITION */
-/* -------------------------------------------------- */
-
-app.get('/api/admin/requisitions/:id', auth, admin, (req,res)=>{
-  const id = Number(req.params.id);
-
-  const orders = db.prepare(`
-    SELECT o.id AS order_id,o.supplier_id,s.name AS supplier_name
-    FROM orders o
-    JOIN suppliers s ON s.id=o.supplier_id
-    WHERE o.requisition_id=?
-    ORDER BY s.name
-  `).all(id);
-
-  const itemsStmt = db.prepare(`
-    SELECT oi.product_id,p.name AS product_name,p.unit,oi.qty_requested
-    FROM order_items oi
-    JOIN products p ON p.id=oi.product_id
-    WHERE oi.order_id=?
-  `);
-
-  const result = orders.map(o => {
-    const items = itemsStmt.all(o.order_id).map(it=>{
-      const alt = db.prepare(`
-        SELECT s.name
-        FROM product_alternatives pa
-        JOIN suppliers s ON s.id=pa.supplier_id
-        WHERE pa.product_id=?
-      `).all(it.product_id);
-
-      return { ...it, alternatives: alt.map(a=>a.name) };
-    });
-
-    return { ...o, items };
-  });
-
-  res.json({ ok:true, orders: result });
-});
-
-/* -------------------------------------------------- */
-/* STAFF: ACTIVE ORDERS */
+/* STAFF — ACTIVE ORDERS */
 /* -------------------------------------------------- */
 
 app.get('/api/my-orders', auth, (req,res)=>{
@@ -516,32 +607,35 @@ app.get('/api/my-orders', auth, (req,res)=>{
   `).all();
 
   const map = new Map();
-  for (const r of rows) {
-    if (!map.has(r.supplier_id)) {
-      map.set(r.supplier_id, {
-        supplier_id: r.supplier_id,
-        supplier_name: r.supplier_name,
-        items: []
+
+  for (const r of rows){
+    if (!map.has(r.supplier_id)){
+      map.set(r.supplier_id,{
+        supplier_id:r.supplier_id,
+        supplier_name:r.supplier_name,
+        items:[]
       });
     }
+
     map.get(r.supplier_id).items.push({
-      product_id: r.product_id,
-      name: r.product_name,
-      unit: r.unit,
-      qty: r.qty
+      product_id:r.product_id,
+      name:r.product_name,
+      unit:r.unit,
+      qty:r.qty
     });
   }
 
-  res.json({ ok:true, orders: Array.from(map.values()) });
+  res.json({ ok:true, orders:Array.from(map.values()) });
 });
 
 /* -------------------------------------------------- */
-/* STAFF: ORDER DELIVERED */
+/* STAFF — MARK DELIVERED */
 /* -------------------------------------------------- */
 
-app.post('/api/my-orders/:sid/delivered', auth, (req,res)=>{
-  const sid = Number(req.params.sid);
-  if (!sid) return res.status(400).json({ ok:false, error:"bad supplier id" });
+app.post('/api/my-orders/:supplier_id/delivered', auth, (req,res)=>{
+  const sid = Number(req.params.supplier_id);
+  if (!sid)
+    return res.status(400).json({ ok:false, error:"bad supplier id" });
 
   db.prepare(`
     UPDATE orders
@@ -553,12 +647,10 @@ app.post('/api/my-orders/:sid/delivered', auth, (req,res)=>{
 });
 
 /* -------------------------------------------------- */
-/* /api/me — СТАВИМ ПЕРЕД STATIC !!! */
+/* /api/me — ДОЛЖНО БЫТЬ ПЕРЕД STATIC */
 /* -------------------------------------------------- */
 
 app.get('/api/me', auth, (req,res)=>{
-  console.log("DEBUG /api/me req.user =", req.user);
-
   res.json({
     ok:true,
     user:{
@@ -570,15 +662,15 @@ app.get('/api/me', auth, (req,res)=>{
 });
 
 /* -------------------------------------------------- */
-/* STATIC (ДОЛЖНА БЫТЬ САМАЯ ПОСЛЕДНЯЯ!) */
+/* STATIC (ПОСЛЕДНИМ!) */
 /* -------------------------------------------------- */
 
-const publicDir = path.join(__dirname, "public");
+const publicDir = path.join(__dirname,"public");
 app.use(express.static(publicDir));
 
-app.get("/", (req,res)=> res.sendFile(path.join(publicDir, "index.html")));
-app.get(["/admin","/admin.html"], (req,res)=> res.sendFile(path.join(publicDir, "admin.html")));
-app.get(["/staff","/staff.html"], (req,res)=> res.sendFile(path.join(publicDir, "staff.html")));
+app.get("/", (req,res)=> res.sendFile(path.join(publicDir,"index.html")));
+app.get(["/admin","/admin.html"], (req,res)=> res.sendFile(path.join(publicDir,"admin.html")));
+app.get(["/staff","/staff.html"], (req,res)=> res.sendFile(path.join(publicDir,"staff.html")));
 app.get("/favicon.ico", (req,res)=> res.status(204).end());
 
 /* -------------------------------------------------- */
@@ -586,12 +678,12 @@ app.get("/favicon.ico", (req,res)=> res.status(204).end());
 /* -------------------------------------------------- */
 
 (async function start(){
-  try {
+  try{
     await loadDb();
-    try { migrate(); } catch{}
-    const port = Number(process.env.PORT || 8080);
+    try{ migrate(); }catch{}
+    const port = Number(process.env.PORT||8080);
     app.listen(port, ()=> console.log("API listening on", port));
-  } catch(err) {
+  }catch(err){
     console.error("Fatal start error:", err);
     process.exit(1);
   }
