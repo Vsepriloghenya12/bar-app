@@ -267,6 +267,7 @@ function buildRequisitionMessage(reqId, userName){
 
   const orders = db.prepare(`
     SELECT o.id AS order_id,
+           o.supplier_id,
            s.name AS supplier_name
     FROM orders o
     JOIN suppliers s ON s.id = o.supplier_id
@@ -275,13 +276,23 @@ function buildRequisitionMessage(reqId, userName){
   `).all(reqId);
 
   const itemsStmt = db.prepare(`
-    SELECT p.name AS product_name,
-           p.unit,
-           oi.qty_requested AS qty
+    SELECT 
+      oi.product_id,
+      p.name AS product_name,
+      p.unit,
+      oi.qty_requested AS qty
     FROM order_items oi
     JOIN products p ON p.id = oi.product_id
     WHERE oi.order_id = ?
     ORDER BY p.name
+  `);
+
+  const altStmt = db.prepare(`
+    SELECT s.name
+    FROM product_alternatives pa
+    JOIN suppliers s ON s.id = pa.supplier_id
+    WHERE pa.product_id = ?
+    ORDER BY s.name
   `);
 
   let text =
@@ -294,6 +305,12 @@ function buildRequisitionMessage(reqId, userName){
     const items = itemsStmt.all(o.order_id);
     for (const it of items){
       text += ` • ${it.product_name} — ${it.qty} ${it.unit || ""}\n`;
+
+      // альтернативы
+      const alts = altStmt.all(it.product_id).map(a => a.name);
+      if (alts.length){
+        text += `    Альтернативы: ${alts.join(", ")}\n`;
+      }
     }
     text += "\n";
   }
