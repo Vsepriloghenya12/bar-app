@@ -2,7 +2,7 @@ const API = location.origin;
 const $ = s => document.querySelector(s);
 
 function getInit(){
-  return decodeURIComponent(new URLSearchParams(location.search).get("initData") || "");
+  return new URLSearchParams(location.search).get("initData") || "";
 }
 
 async function api(url, method="GET", data=null){
