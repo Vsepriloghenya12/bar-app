@@ -1,12 +1,12 @@
-// staff.js — РАБОЧАЯ ВЕРСИЯ с аккордеоном по категориям (исправлено 18.11.2025)
+// staff.js — с ручным вводом количества + всё остальное работает как раньше
 
 const API = location.origin;
-let PRODUCTS = [];        // все товары из базы
-let DISABLED = new Set(); // товары, которые уже в активных заказах (нельзя заказать повторно)
-let cart = new Map();     // корзина: product_id → количество
+let PRODUCTS = [];
+let DISABLED = new Set();
+let cart = new Map();     // product_id → количество
 
-// ==== Вспомогательные ====
 function $(s) { return document.querySelector(s); }
+
 function getInit() {
   return new URLSearchParams(location.search).get("initData") || "";
 }
@@ -26,7 +26,7 @@ async function api(url, method = "GET", data = null) {
   return j;
 }
 
-// ==== Загрузка всего сразу ====
+// === Загрузка данных ===
 async function loadEverything() {
   try {
     const [prodRes, ordersRes] = await Promise.all([
@@ -36,7 +36,6 @@ async function loadEverything() {
 
     PRODUCTS = prodRes.products || [];
 
-    // Какие товары уже заказаны → отключим их
     DISABLED = new Set();
     (ordersRes.orders || []).forEach(group => {
       group.items.forEach(item => DISABLED.add(item.product_id));
@@ -46,16 +45,15 @@ async function loadEverything() {
     renderActiveOrders(ordersRes.orders || []);
     updateTotal();
   } catch (e) {
-    alert("Не удалось загрузить данные: " + e.message);
+    alert("Ошибка загрузки: " + e.message);
   }
 }
 
-// ==== Отрисовка категорий и товаров ====
+// === Отрисовка категорий ===
 function renderCategories() {
   const box = $("#category-list");
   const searchText = $("#search").value.toLowerCase().trim();
 
-  // Группируем по категориям
   const groups = {};
   PRODUCTS.forEach(p => {
     const cat = p.category || "Без категории";
@@ -65,16 +63,11 @@ function renderCategories() {
 
   let html = "";
 
-  // Сортируем категории по алфавиту
   Object.keys(groups).sort().forEach(cat => {
     let items = groups[cat];
-
-    // Фильтр по поиску
     if (searchText) {
       items = items.filter(p => p.name.toLowerCase().includes(searchText));
     }
-
-    // Если после фильтра ничего нет — пропускаем категорию
     if (items.length === 0) return;
 
     html += `
@@ -92,14 +85,14 @@ function renderCategories() {
 
   if (!html) {
     html = `<div style="text-align:center;color:#999;padding:30px 0;">
-              ${searchText ? "Ничего не найдено по запросу «" + $("#search").value + "»" : "Нет товаров"}
+              ${searchText ? `Ничего не найдено по «${$("#search").value}»` : "Нет товаров"}
             </div>`;
   }
 
   box.innerHTML = html;
 }
 
-// Одна карточка товара
+// === Карточка товара (теперь с ручным вводом) ===
 function renderProductCard(p) {
   const isDisabled = DISABLED.has(p.id);
   const qty = cart.get(p.id) || 0;
@@ -124,14 +117,67 @@ function renderProductCard(p) {
       </div>
       <div class="qty-controls">
         <button onclick="changeQty(${p.id}, -1)">–</button>
-        <span class="qty-number">${qty}</span>
+        
+        <!-- Кликабельная цифра → превращается в input -->
+        <span class="qty-number" onclick="startManualEdit(this, ${p.id})">${qty || 0}</span>
+        
         <button onclick="changeQty(${p.id}, 1)">+</button>
       </div>
     </div>
   `;
 }
 
-// ==== + и – ====
+// === Ручной ввод количества ===
+function startManualEdit(spanEl, productId) {
+  const currentQty = cart.get(productId) || 0;
+
+  // Создаём input на месте цифры
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.value = currentQty;
+  input.style.width = "50px";
+  input.style.textAlign = "center";
+  input.style.background = "#333";
+  input.style.color = "white";
+  input.style.border = "1px solid #ff8080";
+  input.style.borderRadius = "6px";
+  input.style.fontSize = "16px";
+
+  // Заменяем span на input
+  spanEl.parentNode.replaceChild(input, spanEl);
+
+  // Фокус и выделение
+  input.focus();
+  input.select();
+
+  // Сохраняем при потере фокуса или Enter
+  const save = () => {
+    let val = Number(input.value);
+    if (isNaN(val) || val < 0) val = 0;
+    if (val === 0) cart.delete(productId);
+    else cart.set(productId, val);
+
+    // Возвращаем обратно span
+    const newSpan = document.createElement("span");
+    newSpan.className = "qty-number";
+    newSpan.textContent = val || 0;
+    newSpan.onclick = () => startManualEdit(newSpan, productId);
+
+    input.parentNode.replaceChild(newSpan, input);
+
+    updateTotal();
+  };
+
+  input.onblur = save;
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") {
+      input.blur();
+    }
+  };
+}
+
+// === + и – (по 1 штуке) ===
 function changeQty(id, delta) {
   const curr = cart.get(id) || 0;
   const newQty = Math.max(0, curr + delta);
@@ -139,27 +185,27 @@ function changeQty(id, delta) {
   if (newQty === 0) cart.delete(id);
   else cart.set(id, newQty);
 
-  // Перерисовываем только эту карточку
+  // Обновляем только эту карточку
+  const product = PRODUCTS.find(p => p.id === id);
   const card = document.querySelector(`.product-card[data-id="${id}"]`);
   if (card) {
-    const product = PRODUCTS.find(p => p.id === id);
     card.outerHTML = renderProductCard(product);
   }
 
   updateTotal();
 }
 
+// === Обновление счётчика в кнопке ===
 function updateTotal() {
   let total = 0;
   cart.forEach(q => total += q);
   $("#total-items").textContent = total;
 }
 
-// ==== Аккордеон (теперь работает идеально) ====
+// === Аккордеон ===
 function toggleAccordion(header) {
   const body = header.nextElementSibling;
   const arrow = header.querySelector(".arrow");
-
   if (body.classList.contains("open")) {
     body.classList.remove("open");
     arrow.textContent = "▶";
@@ -169,10 +215,10 @@ function toggleAccordion(header) {
   }
 }
 
-// ==== Поиск в реальном времени ====
+// === Поиск ===
 $("#search").addEventListener("input", () => renderCategories());
 
-// ==== Отправка заявки ====
+// === Отправка заявки ===
 $("#send-btn").onclick = async () => {
   if (cart.size === 0) return alert("Вы ничего не выбрали");
 
@@ -183,20 +229,19 @@ $("#send-btn").onclick = async () => {
 
   try {
     await api("/api/requisitions", "POST", { items });
-    alert("Заявка успешно отправлена!");
+    alert("Заявка отправлена!");
     cart.clear();
     updateTotal();
-    loadEverything(); // обновим список и активные заказы
+    loadEverything();
     $("#search").value = "";
   } catch (e) {
-    alert("Ошибка отправки: " + e.message);
+    alert("Ошибка: " + e.message);
   }
 };
 
-// ==== Активные заказы ====
+// === Активные заказы ===
 function renderActiveOrders(orders) {
   const box = $("#active-orders");
-
   if (!orders || orders.length === 0) {
     box.innerHTML = "<div style='text-align:center;color:#888;padding:20px;'>Нет активных заказов</div>";
     return;
@@ -215,21 +260,16 @@ function renderActiveOrders(orders) {
   `).join("");
 }
 
-async function delivered(supplier_id) {
-  if (!confirm("Отметить заказ как полученный?")) return;
-  try {
-    await api(`/api/my-orders/${supplier_id}/delivered`, "POST");
-    loadEverything();
-  } catch (e) {
-    alert("Ошибка: " + e.message);
-  }
+async function delivered(id) {
+  if (!confirm("Отметить как получено?")) return;
+  await api(`/api/my-orders/${id}/delivered`, "POST");
+  loadEverything();
 }
 
-// ==== Старт ====
+// === Старт ===
 if (window.Telegram?.WebApp) {
   Telegram.WebApp.ready();
   Telegram.WebApp.expand();
 }
 
-// Первая загрузка
 loadEverything();
