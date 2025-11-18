@@ -1,14 +1,12 @@
-// staff.js — новый красивый с аккордеоном по категориям
+// staff.js — РАБОЧАЯ ВЕРСИЯ с аккордеоном по категориям (исправлено 18.11.2025)
 
 const API = location.origin;
-let PRODUCTS = [];        // все товары
-let DISABLED = new Set(); // товары, которые уже в активных заказах
-let cart = new Map();     // сколько сотрудник выбрал: product_id → количество
+let PRODUCTS = [];        // все товары из базы
+let DISABLED = new Set(); // товары, которые уже в активных заказах (нельзя заказать повторно)
+let cart = new Map();     // корзина: product_id → количество
 
-// ==== Вспомогательные функции ====
+// ==== Вспомогательные ====
 function $(s) { return document.querySelector(s); }
-function $$(s) { return document.querySelectorAll(s); }
-
 function getInit() {
   return new URLSearchParams(location.search).get("initData") || "";
 }
@@ -18,7 +16,6 @@ async function api(url, method = "GET", data = null) {
     "Content-Type": "application/json",
     "X-TG-INIT-DATA": getInit()
   };
-
   const opt = { method, headers };
   if (data) opt.body = JSON.stringify(data);
 
@@ -29,7 +26,7 @@ async function api(url, method = "GET", data = null) {
   return j;
 }
 
-// ==== Загрузка товаров и заказов ====
+// ==== Загрузка всего сразу ====
 async function loadEverything() {
   try {
     const [prodRes, ordersRes] = await Promise.all([
@@ -37,78 +34,84 @@ async function loadEverything() {
       api("/api/my-orders")
     ]);
 
-    PRODUCTS = prodRes.products;
+    PRODUCTS = prodRes.products || [];
 
-    // Собираем, какие товары уже заказаны (чтобы отключить)
+    // Какие товары уже заказаны → отключим их
     DISABLED = new Set();
-    ordersRes.orders.forEach(group => {
+    (ordersRes.orders || []).forEach(group => {
       group.items.forEach(item => DISABLED.add(item.product_id));
     });
 
     renderCategories();
-    renderActiveOrders(ordersRes.orders);
+    renderActiveOrders(ordersRes.orders || []);
     updateTotal();
   } catch (e) {
-    alert("Ошибка загрузки: " + e.message);
+    alert("Не удалось загрузить данные: " + e.message);
   }
 }
 
-// ==== Рендер категорий с аккордеоном ====
+// ==== Отрисовка категорий и товаров ====
 function renderCategories() {
   const box = $("#category-list");
-  const search = $("#search").value.toLowerCase().trim();
+  const searchText = $("#search").value.toLowerCase().trim();
 
   // Группируем по категориям
   const groups = {};
   PRODUCTS.forEach(p => {
-    if (!groups[p.category]) groups[p.category] = [];
-    groups[p.category].push(p);
+    const cat = p.category || "Без категории";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(p);
   });
 
   let html = "";
 
+  // Сортируем категории по алфавиту
   Object.keys(groups).sort().forEach(cat => {
-    const items = groups[cat];
+    let items = groups[cat];
 
     // Фильтр по поиску
-    const filtered = search
-      ? items.filter(p => p.name.toLowerCase().includes(search))
-      : items;
+    if (searchText) {
+      items = items.filter(p => p.name.toLowerCase().includes(searchText));
+    }
 
-    if (filtered.length === 0) return;
-
- Опять же, если хочешь — я сделаю так, чтобы категории тоже скрывались при пустом поиске.
+    // Если после фильтра ничего нет — пропускаем категорию
+    if (items.length === 0) return;
 
     html += `
       <div class="category-accordion">
-        <div class="accordion-header" onclick="toggle(this)">
-          <span>${cat} (${filtered.length})</span>
+        <div class="accordion-header" onclick="toggleAccordion(this)">
+          <span>${cat} <small style="color:#aaa">(${items.length})</small></span>
           <span class="arrow">▶</span>
         </div>
         <div class="accordion-body">
-          ${filtered.map(p => renderProduct(p)).join("")}
+          ${items.map(p => renderProductCard(p)).join("")}
         </div>
       </div>
     `;
   });
 
-  if (!html) html = `<div style="text-align:center;color:#888;padding:20px;">Товаров не найдено</div>`;
+  if (!html) {
+    html = `<div style="text-align:center;color:#999;padding:30px 0;">
+              ${searchText ? "Ничего не найдено по запросу «" + $("#search").value + "»" : "Нет товаров"}
+            </div>`;
+  }
+
   box.innerHTML = html;
 }
 
-// Один товар
-function renderProduct(p) {
-  const disabled = DISABLED.has(p.id);
+// Одна карточка товара
+function renderProductCard(p) {
+  const isDisabled = DISABLED.has(p.id);
   const qty = cart.get(p.id) || 0;
 
-  if (disabled) {
+  if (isDisabled) {
     return `
       <div class="product-card disabled">
         <div class="product-info">
           <b>${p.name}</b> (${p.unit})
-          <small>${p.category}</small>
+          <small>${p.category || "—"}</small>
         </div>
-        <div style="color:#ff8080;font-weight:bold;">Уже заказан</div>
+        <div style="color:#ff6b6b;font-weight:bold;">Уже в заказе</div>
       </div>
     `;
   }
@@ -117,29 +120,30 @@ function renderProduct(p) {
     <div class="product-card" data-id="${p.id}">
       <div class="product-info">
         <b>${p.name}</b> (${p.unit})
-        <small>${p.category}</small>
+        <small>${p.category || "—"}</small>
       </div>
       <div class="qty-controls">
         <button onclick="changeQty(${p.id}, -1)">–</button>
-        <span>${qty}</span>
+        <span class="qty-number">${qty}</span>
         <button onclick="changeQty(${p.id}, 1)">+</button>
       </div>
     </div>
   `;
 }
 
-// ==== Работа с количеством ====
+// ==== + и – ====
 function changeQty(id, delta) {
-  const current = cart.get(id) || 0;
-  const newQty = Math.max(0, current + delta);
+  const curr = cart.get(id) || 0;
+  const newQty = Math.max(0, curr + delta);
+
   if (newQty === 0) cart.delete(id);
   else cart.set(id, newQty);
 
   // Перерисовываем только эту карточку
   const card = document.querySelector(`.product-card[data-id="${id}"]`);
   if (card) {
-    const newCard = renderProduct(PRODUCTS.find(p => p.id === id));
-    card.outerHTML = newCard;
+    const product = PRODUCTS.find(p => p.id === id);
+    card.outerHTML = renderProductCard(product);
   }
 
   updateTotal();
@@ -151,13 +155,11 @@ function updateTotal() {
   $("#total-items").textContent = total;
 }
 
-// ==== Поиск в реальном времени ====
-$("#search").addEventListener("input", () => renderCategories());
+// ==== Аккордеон (теперь работает идеально) ====
+function toggleAccordion(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector(".arrow");
 
-// ==== Аккордеон ====
-function toggle(el) {
-  const body = el.nextElementSibling;
-  const arrow = el.querySelector(".arrow");
   if (body.classList.contains("open")) {
     body.classList.remove("open");
     arrow.textContent = "▶";
@@ -167,21 +169,24 @@ function toggle(el) {
   }
 }
 
+// ==== Поиск в реальном времени ====
+$("#search").addEventListener("input", () => renderCategories());
+
 // ==== Отправка заявки ====
 $("#send-btn").onclick = async () => {
   if (cart.size === 0) return alert("Вы ничего не выбрали");
 
-  const items = [];
-  cart.forEach((qty, product_id) => {
-    items.push({ product_id, qty });
-  });
+  const items = Array.from(cart.entries()).map(([product_id, qty]) => ({
+    product_id,
+    qty
+  }));
 
   try {
     await api("/api/requisitions", "POST", { items });
-    alert("Заявка отправлена!");
+    alert("Заявка успешно отправлена!");
     cart.clear();
     updateTotal();
-    loadEverything(); // обновляем всё
+    loadEverything(); // обновим список и активные заказы
     $("#search").value = "";
   } catch (e) {
     alert("Ошибка отправки: " + e.message);
@@ -201,8 +206,8 @@ function renderActiveOrders(orders) {
     <div class="card">
       <h3>${g.supplier_name}</h3>
       ${g.items.map(it => `${it.name} — ${it.qty} ${it.unit}<br>`).join("")}
-      <div style="margin-top:10px;">
-        <button onclick="delivered(${g.supplier_id})" style="background:#4caf50;">
+      <div style="margin-top:12px;">
+        <button onclick="delivered(${g.supplier_id})" style="background:#4caf50;padding:10px 16px;">
           Заказ пришёл ✓
         </button>
       </div>
@@ -211,9 +216,13 @@ function renderActiveOrders(orders) {
 }
 
 async function delivered(supplier_id) {
-  if (!confirm("Подтвердить получение заказа?")) return;
-  await api(`/api/my-orders/${supplier_id}/delivered`, "POST");
-  loadEverything();
+  if (!confirm("Отметить заказ как полученный?")) return;
+  try {
+    await api(`/api/my-orders/${supplier_id}/delivered`, "POST");
+    loadEverything();
+  } catch (e) {
+    alert("Ошибка: " + e.message);
+  }
 }
 
 // ==== Старт ====
@@ -222,4 +231,5 @@ if (window.Telegram?.WebApp) {
   Telegram.WebApp.expand();
 }
 
+// Первая загрузка
 loadEverything();
