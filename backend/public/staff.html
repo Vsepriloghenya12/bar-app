@@ -1,39 +1,26 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Заявка</title>
-
-  <link rel="stylesheet" href="styles.css">
-
-  <!-- Telegram WebApp SDK -->
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Заявки — Сотрудник</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-
 <body>
-  <div class="container">
 
-    <h2>Создать заявку</h2>
+<div class="container">
+    <h1>Заявка</h1>
 
-    <!-- Поиск -->
-    <input type="text" id="search" placeholder="🔍 Поиск товара..." autocomplete="off">
-
-    <!-- Список категорий с товарами -->
+    <h2>Товары по категориям</h2>
     <div id="category-list"></div>
 
-    <!-- Фиксированная кнопка отправки внизу -->
-    <button id="send-btn" class="primary-btn" style="position:fixed; bottom:20px; left:16px; right:16px; z-index:10;">
-      Отправить заявку (<span id="total-items">0</span>)
-    </button>
+    <button id="send-btn" class="btn-primary">Отправить заявку</button>
 
-    <hr style="margin:50px 0 20px">
-
-    <h2>Активные заказы</h2>
+    <h2 style="margin-top:20px;">Активные заказы</h2>
     <div id="active-orders"></div>
+</div>
 
-  </div>
-
-  <script src="staff.js"></script>
+<script src="./staff.js"></script>
 </body>
 </html>
