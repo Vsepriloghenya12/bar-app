@@ -260,7 +260,7 @@ button:hover {
 
 .accordion-header {
   padding: 8px 12px;
-  background: #eee;
+  background: #080808;
   display: flex;
   justify-content: space-between;
   cursor: pointer;
