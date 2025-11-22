@@ -76,8 +76,8 @@ button {
   border: none;
   cursor: pointer;
   font-size: 13px;
-  color: rgb(243, 0, 0);
-  background: #ff7070;
+  color: rgb(0, 0, 0);
+  background: #e9e7e7;
   transition: 0.15s;
 }
 
@@ -254,7 +254,7 @@ button:hover {
 .accordion {
   background: #ffffffcc;
   border-radius: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid #000000;
   margin-bottom: 10px;
 }
 
