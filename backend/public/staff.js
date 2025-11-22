@@ -1,275 +1,233 @@
-// staff.js — с ручным вводом количества + всё остальное работает как раньше
+"use strict";
 
-const API = location.origin;
-let PRODUCTS = [];
-let DISABLED = new Set();
-let cart = new Map();     // product_id → количество
+/* ============================================================
+    API helper
+============================================================ */
+async function api(path, method = "GET", data = null) {
+    const opts = { method, headers: {} };
 
-function $(s) { return document.querySelector(s); }
+    // INIT DATA (Telegram / PWA fallback)
+    const tg = window.Telegram?.WebApp;
+    const init = tg?.initData || "";
 
-function getInit() {
-  return new URLSearchParams(location.search).get("initData") || "";
+    if (init) {
+        opts.headers["X-TG-INIT-DATA"] = init;
+    }
+
+    if (data) {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(data);
+    }
+
+    const res = await fetch(path, opts);
+    return res.json().catch(() => ({ ok: false }));
 }
 
-async function api(url, method = "GET", data = null) {
-  const headers = {
-    "Content-Type": "application/json",
-    "X-TG-INIT-DATA": getInit()
-  };
-  const opt = { method, headers };
-  if (data) opt.body = JSON.stringify(data);
+/* ============================================================
+    Загрузка товаров
+============================================================ */
+async function loadProducts() {
+    const r = await api("/api/products");
+    if (!r.ok) {
+        document.getElementById("category-list").innerHTML =
+            "<p class='muted'>Ошибка загрузки товаров</p>";
+        return;
+    }
 
-  const r = await fetch(url, opt);
-  const j = await r.json();
-
-  if (!r.ok || !j?.ok) throw new Error(j?.error || "Ошибка сети");
-  return j;
+    window.ALL_PRODUCTS = r.products;
+    renderProductsByCategory(r.products);
 }
 
-// === Загрузка данных ===
-async function loadEverything() {
-  try {
-    const [prodRes, ordersRes] = await Promise.all([
-      api("/api/products"),
-      api("/api/my-orders")
-    ]);
+/* ============================================================
+    Рендер списка товаров по категориям
+============================================================ */
+function renderProductsByCategory(products) {
+    const container = document.getElementById("category-list");
+    container.innerHTML = "";
 
-    PRODUCTS = prodRes.products || [];
+    const map = new Map();
+    for (const p of products) {
+        if (!map.has(p.category)) map.set(p.category, []);
+        map.get(p.category).push(p);
+    }
 
-    DISABLED = new Set();
-    (ordersRes.orders || []).forEach(group => {
-      group.items.forEach(item => DISABLED.add(item.product_id));
+    for (const [category, items] of map.entries()) {
+        const block = document.createElement("div");
+        block.className = "accordion";
+
+        const header = document.createElement("div");
+        header.className = "accordion-header";
+        header.innerHTML = `
+            <span>${category}</span>
+            <span class="arrow">▶</span>
+        `;
+
+        const body = document.createElement("div");
+        body.className = "accordion-body";
+        body.style.display = "none";
+
+        header.onclick = () => {
+            const isClosed = body.style.display === "none";
+            body.style.display = isClosed ? "block" : "none";
+            header.querySelector(".arrow").textContent = isClosed ? "▼" : "▶";
+        };
+
+        items.forEach(p => {
+            const row = document.createElement("div");
+            row.className = "product-row";
+
+            row.innerHTML = `
+                <span>${p.name} <span class="unit">(${p.unit})</span></span>
+                <div class="qty-box">
+                    <button class="qty-btn" data-minus="${p.id}">−</button>
+                    <input id="qty-${p.id}" 
+                           type="number" 
+                           min="0"
+                           class="qty-input"
+                           inputmode="numeric">
+                    <button class="qty-btn" data-plus="${p.id}">+</button>
+                </div>
+            `;
+
+            body.appendChild(row);
+        });
+
+        block.appendChild(header);
+        block.appendChild(body);
+        container.appendChild(block);
+    }
+}
+
+/* ============================================================
+    Кнопки + / - для количества
+============================================================ */
+document.addEventListener("click", e => {
+    if (e.target.matches("[data-plus]")) {
+        const id = e.target.getAttribute("data-plus");
+        const inp = document.getElementById(`qty-${id}`);
+        inp.value = Number(inp.value || 0) + 1;
+        updateTotalItems();
+    }
+
+    if (e.target.matches("[data-minus]")) {
+        const id = e.target.getAttribute("data-minus");
+        const inp = document.getElementById(`qty-${id}`);
+        inp.value = Math.max(0, Number(inp.value || 0) - 1);
+        updateTotalItems();
+    }
+});
+
+/* ============================================================
+    Ручной ввод количества — только цифры
+============================================================ */
+document.addEventListener("input", e => {
+    if (e.target.classList.contains("qty-input")) {
+        e.target.value = e.target.value.replace(/[^\d]/g, "");
+        updateTotalItems();
+    }
+});
+
+/* ============================================================
+    Подсчёт количества товаров в кнопке
+============================================================ */
+function updateTotalItems() {
+    let total = 0;
+    document.querySelectorAll(".qty-input").forEach(inp => {
+        total += Number(inp.value || 0);
+    });
+    document.getElementById("total-items").textContent = total;
+}
+
+/* ============================================================
+    Поиск товаров
+============================================================ */
+document.getElementById("search")?.addEventListener("input", e => {
+    const q = e.target.value.toLowerCase();
+    const filtered = window.ALL_PRODUCTS.filter(p =>
+        p.name.toLowerCase().includes(q)
+    );
+    renderProductsByCategory(filtered);
+});
+
+/* ============================================================
+    Отправка заявки
+============================================================ */
+document.getElementById("send-btn").onclick = async () => {
+    const items = [];
+
+    document.querySelectorAll(".qty-input").forEach(inp => {
+        const qty = Number(inp.value);
+        if (qty > 0) {
+            const id = Number(inp.id.replace("qty-", ""));
+            items.push({ product_id: id, qty });
+        }
     });
 
-    renderCategories();
-    renderActiveOrders(ordersRes.orders || []);
-    updateTotal();
-  } catch (e) {
-    alert("Ошибка загрузки: " + e.message);
-  }
-}
-
-// === Отрисовка категорий ===
-function renderCategories() {
-  const box = $("#category-list");
-  const searchText = $("#search").value.toLowerCase().trim();
-
-  const groups = {};
-  PRODUCTS.forEach(p => {
-    const cat = p.category || "Без категории";
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(p);
-  });
-
-  let html = "";
-
-  Object.keys(groups).sort().forEach(cat => {
-    let items = groups[cat];
-    if (searchText) {
-      items = items.filter(p => p.name.toLowerCase().includes(searchText));
+    if (items.length === 0) {
+        return alert("Введите количество товаров");
     }
-    if (items.length === 0) return;
 
-    html += `
-      <div class="category-accordion">
-        <div class="accordion-header" onclick="toggleAccordion(this)">
-          <span>${cat} <small style="color:#aaa">(${items.length})</small></span>
-          <span class="arrow">▶</span>
-        </div>
-        <div class="accordion-body">
-          ${items.map(p => renderProductCard(p)).join("")}
-        </div>
-      </div>
-    `;
-  });
+    const r = await api("/api/requisitions", "POST", { items });
+    if (!r.ok) return alert("Ошибка: " + r.error);
 
-  if (!html) {
-    html = `<div style="text-align:center;color:#999;padding:30px 0;">
-              ${searchText ? `Ничего не найдено по «${$("#search").value}»` : "Нет товаров"}
-            </div>`;
-  }
-
-  box.innerHTML = html;
-}
-
-// === Карточка товара (теперь с ручным вводом) ===
-function renderProductCard(p) {
-  const isDisabled = DISABLED.has(p.id);
-  const qty = cart.get(p.id) || 0;
-
-  if (isDisabled) {
-    return `
-      <div class="product-card disabled">
-        <div class="product-info">
-          <b>${p.name}</b> (${p.unit})
-          <small>${p.category || "—"}</small>
-        </div>
-        <div style="color:#ff6b6b;font-weight:bold;">Уже в заказе</div>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="product-card" data-id="${p.id}">
-      <div class="product-info">
-        <b>${p.name}</b> (${p.unit})
-        <small>${p.category || "—"}</small>
-      </div>
-      <div class="qty-controls">
-        <button onclick="changeQty(${p.id}, -1)">–</button>
-        
-        <!-- Кликабельная цифра → превращается в input -->
-        <span class="qty-number" onclick="startManualEdit(this, ${p.id})">${qty || 0}</span>
-        
-        <button onclick="changeQty(${p.id}, 1)">+</button>
-      </div>
-    </div>
-  `;
-}
-
-// === Ручной ввод количества ===
-function startManualEdit(spanEl, productId) {
-  const currentQty = cart.get(productId) || 0;
-
-  // Создаём input на месте цифры
-  const input = document.createElement("input");
-  input.type = "number";
-  input.min = "0";
-  input.value = currentQty;
-  input.style.width = "50px";
-  input.style.textAlign = "center";
-  input.style.background = "#333";
-  input.style.color = "white";
-  input.style.border = "1px solid #ff8080";
-  input.style.borderRadius = "6px";
-  input.style.fontSize = "16px";
-
-  // Заменяем span на input
-  spanEl.parentNode.replaceChild(input, spanEl);
-
-  // Фокус и выделение
-  input.focus();
-  input.select();
-
-  // Сохраняем при потере фокуса или Enter
-  const save = () => {
-    let val = Number(input.value);
-    if (isNaN(val) || val < 0) val = 0;
-    if (val === 0) cart.delete(productId);
-    else cart.set(productId, val);
-
-    // Возвращаем обратно span
-    const newSpan = document.createElement("span");
-    newSpan.className = "qty-number";
-    newSpan.textContent = val || 0;
-    newSpan.onclick = () => startManualEdit(newSpan, productId);
-
-    input.parentNode.replaceChild(newSpan, input);
-
-    updateTotal();
-  };
-
-  input.onblur = save;
-  input.onkeydown = (e) => {
-    if (e.key === "Enter") {
-      input.blur();
-    }
-  };
-}
-
-// === + и – (по 1 штуке) ===
-function changeQty(id, delta) {
-  const curr = cart.get(id) || 0;
-  const newQty = Math.max(0, curr + delta);
-
-  if (newQty === 0) cart.delete(id);
-  else cart.set(id, newQty);
-
-  // Обновляем только эту карточку
-  const product = PRODUCTS.find(p => p.id === id);
-  const card = document.querySelector(`.product-card[data-id="${id}"]`);
-  if (card) {
-    card.outerHTML = renderProductCard(product);
-  }
-
-  updateTotal();
-}
-
-// === Обновление счётчика в кнопке ===
-function updateTotal() {
-  let total = 0;
-  cart.forEach(q => total += q);
-  $("#total-items").textContent = total;
-}
-
-// === Аккордеон ===
-function toggleAccordion(header) {
-  const body = header.nextElementSibling;
-  const arrow = header.querySelector(".arrow");
-  if (body.classList.contains("open")) {
-    body.classList.remove("open");
-    arrow.textContent = "▶";
-  } else {
-    body.classList.add("open");
-    arrow.textContent = "▼";
-  }
-}
-
-// === Поиск ===
-$("#search").addEventListener("input", () => renderCategories());
-
-// === Отправка заявки ===
-$("#send-btn").onclick = async () => {
-  if (cart.size === 0) return alert("Вы ничего не выбрали");
-
-  const items = Array.from(cart.entries()).map(([product_id, qty]) => ({
-    product_id,
-    qty
-  }));
-
-  try {
-    await api("/api/requisitions", "POST", { items });
     alert("Заявка отправлена!");
-    cart.clear();
-    updateTotal();
-    loadEverything();
-    $("#search").value = "";
-  } catch (e) {
-    alert("Ошибка: " + e.message);
-  }
+
+    updateTotalItems();
+    loadActiveOrders();
+    loadProducts(); // обновить товары
 };
 
-// === Активные заказы ===
-function renderActiveOrders(orders) {
-  const box = $("#active-orders");
-  if (!orders || orders.length === 0) {
-    box.innerHTML = "<div style='text-align:center;color:#888;padding:20px;'>Нет активных заказов</div>";
-    return;
-  }
+/* ============================================================
+    Активные заказы
+============================================================ */
+async function loadActiveOrders() {
+    const r = await api("/api/my-orders");
+    const block = document.getElementById("active-orders");
+    block.innerHTML = "";
 
-  box.innerHTML = orders.map(g => `
-    <div class="card">
-      <h3>${g.supplier_name}</h3>
-      ${g.items.map(it => `${it.name} — ${it.qty} ${it.unit}<br>`).join("")}
-      <div style="margin-top:12px;">
-        <button onclick="delivered(${g.supplier_id})" style="background:#4caf50;padding:10px 16px;">
-          Заказ пришёл ✓
-        </button>
-      </div>
-    </div>
-  `).join("");
+    if (!r.ok || !r.orders.length) {
+        block.innerHTML = "<p class='muted'>Активных заказов нет</p>";
+        return;
+    }
+
+    r.orders.forEach(ord => {
+        const div = document.createElement("div");
+        div.className = "order-box";
+
+        div.innerHTML = `
+            <div class="order-head">
+                <b>${ord.supplier_name}</b>
+                <button class="delivered-btn" data-del="${ord.supplier_id}">
+                    Пришло
+                </button>
+            </div>
+        `;
+
+        ord.items.forEach(it => {
+            const row = document.createElement("div");
+            row.className = "order-item";
+            row.innerHTML = `${it.name} — ${it.qty} ${it.unit}`;
+            div.appendChild(row);
+        });
+
+        block.appendChild(div);
+    });
 }
 
-async function delivered(id) {
-  if (!confirm("Отметить как получено?")) return;
-  await api(`/api/my-orders/${id}/delivered`, "POST");
-  loadEverything();
-}
+/* ============================================================
+    Отметить поставку "Пришло"
+============================================================ */
+document.addEventListener("click", e => {
+    if (e.target.matches("[data-del]")) {
+        const sid = e.target.getAttribute("data-del");
+        api(`/api/my-orders/${sid}/delivered`, "POST").then(r => {
+            if (r.ok) loadActiveOrders();
+        });
+    }
+});
 
-// === Старт ===
-if (window.Telegram?.WebApp) {
-  Telegram.WebApp.ready();
-  Telegram.WebApp.expand();
-}
-
-loadEverything();
+/* ============================================================
+    START
+============================================================ */
+loadProducts();
+loadActiveOrders();
