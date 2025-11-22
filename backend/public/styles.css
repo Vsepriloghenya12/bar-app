@@ -275,7 +275,7 @@ button:hover {
   display: flex;
   justify-content: space-between;
   padding: 4px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #090909;
 }
 
 .product-row:last-child {
@@ -287,7 +287,7 @@ button:hover {
 }
 
 .order-block {
-  background: #f9f9f9;
+  background: #020202;
   padding: 10px;
   border-radius: 8px;
   margin-bottom: 12px;
