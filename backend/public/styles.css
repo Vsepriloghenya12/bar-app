@@ -43,7 +43,7 @@ textarea {
   border-radius: 8px;
   background: #2b2b2d;
   border: 1px solid #444;
-  color: #000000;
+  color: #fefefe;
   font-size: 14px;
   box-sizing: border-box;
   transition: 0.15s;
@@ -76,7 +76,7 @@ button {
   border: none;
   cursor: pointer;
   font-size: 13px;
-  color: white;
+  color: rgb(243, 0, 0);
   background: #ff7070;
   transition: 0.15s;
 }
