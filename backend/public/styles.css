@@ -251,3 +251,69 @@ button:hover {
 #total-items {
   font-weight: bold;
 }
+.accordion {
+  background: #ffffffcc;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  margin-bottom: 10px;
+}
+
+.accordion-header {
+  padding: 8px 12px;
+  background: #eee;
+  display: flex;
+  justify-content: space-between;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.accordion-body {
+  padding: 6px 10px;
+}
+
+.product-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.product-row:last-child {
+  border-bottom: none;
+}
+
+.qty-input {
+  width: 55px;
+}
+
+.order-block {
+  background: #f9f9f9;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #ddd;
+}
+
+.order-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.order-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  padding: 2px 0;
+}
+
+.primary-btn {
+  margin-top: 10px;
+  width: 100%;
+  padding: 10px;
+}
+
+.mini-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
