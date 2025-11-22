@@ -1,233 +1,319 @@
-"use strict";
+// ==============================
+// staff.js — восстановленная версия (вариант C)
+// ==============================
 
-/* ============================================================
-    API helper
-============================================================ */
-async function api(path, method = "GET", data = null) {
-    const opts = { method, headers: {} };
+(function () {
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    try {
+      tg.ready();
+      tg.expand();
+    } catch (_) {}
+  }
 
-    // INIT DATA (Telegram / PWA fallback)
-    const tg = window.Telegram?.WebApp;
-    const init = tg?.initData || "";
+  // -------------------------------------------------------
+  // INIT DATA
+  // -------------------------------------------------------
+  function getInit() {
+    const raw = tg?.initData;
+    return raw || "";
+  }
 
-    if (init) {
-        opts.headers["X-TG-INIT-DATA"] = init;
-    }
+  async function api(path, options = {}) {
+    const headers = options.headers || {};
+    headers["X-TG-INIT-DATA"] = getInit();
+    headers["Content-Type"] = "application/json";
 
-    if (data) {
-        opts.headers["Content-Type"] = "application/json";
-        opts.body = JSON.stringify(data);
-    }
-
-    const res = await fetch(path, opts);
-    return res.json().catch(() => ({ ok: false }));
-}
-
-/* ============================================================
-    Загрузка товаров
-============================================================ */
-async function loadProducts() {
-    const r = await api("/api/products");
-    if (!r.ok) {
-        document.getElementById("category-list").innerHTML =
-            "<p class='muted'>Ошибка загрузки товаров</p>";
-        return;
-    }
-
-    window.ALL_PRODUCTS = r.products;
-    renderProductsByCategory(r.products);
-}
-
-/* ============================================================
-    Рендер списка товаров по категориям
-============================================================ */
-function renderProductsByCategory(products) {
-    const container = document.getElementById("category-list");
-    container.innerHTML = "";
-
-    const map = new Map();
-    for (const p of products) {
-        if (!map.has(p.category)) map.set(p.category, []);
-        map.get(p.category).push(p);
-    }
-
-    for (const [category, items] of map.entries()) {
-        const block = document.createElement("div");
-        block.className = "accordion";
-
-        const header = document.createElement("div");
-        header.className = "accordion-header";
-        header.innerHTML = `
-            <span>${category}</span>
-            <span class="arrow">▶</span>
-        `;
-
-        const body = document.createElement("div");
-        body.className = "accordion-body";
-        body.style.display = "none";
-
-        header.onclick = () => {
-            const isClosed = body.style.display === "none";
-            body.style.display = isClosed ? "block" : "none";
-            header.querySelector(".arrow").textContent = isClosed ? "▼" : "▶";
-        };
-
-        items.forEach(p => {
-            const row = document.createElement("div");
-            row.className = "product-row";
-
-            row.innerHTML = `
-                <span>${p.name} <span class="unit">(${p.unit})</span></span>
-                <div class="qty-box">
-                    <button class="qty-btn" data-minus="${p.id}">−</button>
-                    <input id="qty-${p.id}" 
-                           type="number" 
-                           min="0"
-                           class="qty-input"
-                           inputmode="numeric">
-                    <button class="qty-btn" data-plus="${p.id}">+</button>
-                </div>
-            `;
-
-            body.appendChild(row);
-        });
-
-        block.appendChild(header);
-        block.appendChild(body);
-        container.appendChild(block);
-    }
-}
-
-/* ============================================================
-    Кнопки + / - для количества
-============================================================ */
-document.addEventListener("click", e => {
-    if (e.target.matches("[data-plus]")) {
-        const id = e.target.getAttribute("data-plus");
-        const inp = document.getElementById(`qty-${id}`);
-        inp.value = Number(inp.value || 0) + 1;
-        updateTotalItems();
-    }
-
-    if (e.target.matches("[data-minus]")) {
-        const id = e.target.getAttribute("data-minus");
-        const inp = document.getElementById(`qty-${id}`);
-        inp.value = Math.max(0, Number(inp.value || 0) - 1);
-        updateTotalItems();
-    }
-});
-
-/* ============================================================
-    Ручной ввод количества — только цифры
-============================================================ */
-document.addEventListener("input", e => {
-    if (e.target.classList.contains("qty-input")) {
-        e.target.value = e.target.value.replace(/[^\d]/g, "");
-        updateTotalItems();
-    }
-});
-
-/* ============================================================
-    Подсчёт количества товаров в кнопке
-============================================================ */
-function updateTotalItems() {
-    let total = 0;
-    document.querySelectorAll(".qty-input").forEach(inp => {
-        total += Number(inp.value || 0);
-    });
-    document.getElementById("total-items").textContent = total;
-}
-
-/* ============================================================
-    Поиск товаров
-============================================================ */
-document.getElementById("search")?.addEventListener("input", e => {
-    const q = e.target.value.toLowerCase();
-    const filtered = window.ALL_PRODUCTS.filter(p =>
-        p.name.toLowerCase().includes(q)
-    );
-    renderProductsByCategory(filtered);
-});
-
-/* ============================================================
-    Отправка заявки
-============================================================ */
-document.getElementById("send-btn").onclick = async () => {
-    const items = [];
-
-    document.querySelectorAll(".qty-input").forEach(inp => {
-        const qty = Number(inp.value);
-        if (qty > 0) {
-            const id = Number(inp.id.replace("qty-", ""));
-            items.push({ product_id: id, qty });
-        }
+    const res = await fetch(path, {
+      method: options.method || "GET",
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
     });
 
-    if (items.length === 0) {
-        return alert("Введите количество товаров");
-    }
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.ok === false) throw new Error(json?.error || "Error");
 
-    const r = await api("/api/requisitions", "POST", { items });
-    if (!r.ok) return alert("Ошибка: " + r.error);
+    return json;
+  }
 
-    alert("Заявка отправлена!");
+  // -------------------------------------------------------------------
+  // GLOBAL STATE
+  // -------------------------------------------------------------------
+  let allProducts = [];
+  let grouped = {};
+  let collapsed = {}; // состояние категорий
+  let searchTerm = "";
 
+  // -------------------------------------------------------------------
+  // DOM ELEMENTS
+  // -------------------------------------------------------------------
+  const form = document.querySelector("#form");
+  const submitBtn = document.querySelector("#submit");
+  const totalCounter = document.querySelector("#total-counter");
+  const searchInput = document.querySelector("#search");
+  const activeOrdersBox = document.querySelector("#active-orders");
+
+  // -------------------------------------------------------------------
+  // LOAD PRODUCTS
+  // -------------------------------------------------------------------
+  async function loadProducts() {
+    const resp = await api("/api/products");
+    allProducts = resp.products || [];
+    groupByCategory();
+    renderCategories();
     updateTotalItems();
-    loadActiveOrders();
-    loadProducts(); // обновить товары
-};
+  }
 
-/* ============================================================
-    Активные заказы
-============================================================ */
-async function loadActiveOrders() {
-    const r = await api("/api/my-orders");
-    const block = document.getElementById("active-orders");
-    block.innerHTML = "";
+  // GROUP BY CATEGORY
+  function groupByCategory() {
+    grouped = {};
 
-    if (!r.ok || !r.orders.length) {
-        block.innerHTML = "<p class='muted'>Активных заказов нет</p>";
-        return;
+    for (const p of allProducts) {
+      const cat = p.category || "Другое";
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push({ ...p, qty: 0 });
+      if (!(cat in collapsed)) collapsed[cat] = false;
     }
+  }
 
-    r.orders.forEach(ord => {
-        const div = document.createElement("div");
-        div.className = "order-box";
+  // -------------------------------------------------------------------
+  // RENDER
+  // -------------------------------------------------------------------
+  function renderCategories() {
+    form.innerHTML = "";
 
-        div.innerHTML = `
-            <div class="order-head">
-                <b>${ord.supplier_name}</b>
-                <button class="delivered-btn" data-del="${ord.supplier_id}">
-                    Пришло
-                </button>
-            </div>
-        `;
+    const terms = searchTerm.trim().toLowerCase();
 
-        ord.items.forEach(it => {
-            const row = document.createElement("div");
-            row.className = "order-item";
-            row.innerHTML = `${it.name} — ${it.qty} ${it.unit}`;
-            div.appendChild(row);
+    for (const category of Object.keys(grouped).sort()) {
+      const block = document.createElement("div");
+      block.className = "category-block";
+
+      const catHeader = document.createElement("div");
+      catHeader.className = "category-header";
+      catHeader.textContent = category;
+
+      catHeader.addEventListener("click", () => {
+        collapsed[category] = !collapsed[category];
+        renderCategories();
+      });
+
+      block.appendChild(catHeader);
+
+      if (collapsed[category]) {
+        const hiddenNote = document.createElement("div");
+        hiddenNote.className = "category-collapsed";
+        hiddenNote.textContent = "Свернуто";
+        block.appendChild(hiddenNote);
+        form.appendChild(block);
+        continue;
+      }
+
+      const itemsWrap = document.createElement("div");
+      itemsWrap.className = "items-wrap";
+
+      for (const prod of grouped[category]) {
+        // filter
+        if (terms && !prod.name.toLowerCase().includes(terms)) continue;
+
+        const item = document.createElement("div");
+        item.className = "product-row";
+        item.dataset.pid = prod.id;
+
+        const name = document.createElement("div");
+        name.className = "product-name";
+        name.textContent = `${prod.name} (${prod.unit})`;
+
+        const controls = document.createElement("div");
+        controls.className = "product-controls";
+
+        const minus = document.createElement("button");
+        minus.className = "qty-btn minus";
+        minus.textContent = "-";
+        minus.addEventListener("click", () => changeQty(prod.id, -1));
+
+        const input = document.createElement("input");
+        input.className = "qty-input";
+        input.type = "number";
+        input.min = "0";
+        input.value = prod.qty || 0;
+        input.addEventListener("input", () => {
+          let v = Number(input.value);
+          if (isNaN(v) || v < 0) v = 0;
+          prod.qty = v;
+          updateTotalItems();
         });
 
-        block.appendChild(div);
-    });
-}
+        const plus = document.createElement("button");
+        plus.className = "qty-btn plus";
+        plus.textContent = "+";
+        plus.addEventListener("click", () => changeQty(prod.id, +1));
 
-/* ============================================================
-    Отметить поставку "Пришло"
-============================================================ */
-document.addEventListener("click", e => {
-    if (e.target.matches("[data-del]")) {
-        const sid = e.target.getAttribute("data-del");
-        api(`/api/my-orders/${sid}/delivered`, "POST").then(r => {
-            if (r.ok) loadActiveOrders();
-        });
+        controls.appendChild(minus);
+        controls.appendChild(input);
+        controls.appendChild(plus);
+
+        item.appendChild(name);
+        item.appendChild(controls);
+        itemsWrap.appendChild(item);
+      }
+
+      block.appendChild(itemsWrap);
+      form.appendChild(block);
     }
-});
+  }
 
-/* ============================================================
-    START
-============================================================ */
-loadProducts();
-loadActiveOrders();
+  // -------------------------------------------------------------------
+  // CHANGE QTY
+  // -------------------------------------------------------------------
+  function changeQty(pid, delta) {
+    for (const cat of Object.keys(grouped)) {
+      for (const p of grouped[cat]) {
+        if (p.id === pid) {
+          p.qty = Math.max(0, (p.qty || 0) + delta);
+        }
+      }
+    }
+    renderCategories();
+    updateTotalItems();
+  }
+
+  // -------------------------------------------------------------------
+  // TOTAL
+  // -------------------------------------------------------------------
+  function updateTotalItems() {
+    let sum = 0;
+    for (const cat of Object.keys(grouped)) {
+      for (const p of grouped[cat]) {
+        sum += p.qty || 0;
+      }
+    }
+    totalCounter.textContent = sum;
+  }
+
+  // -------------------------------------------------------------------
+  // SUBMIT
+  // -------------------------------------------------------------------
+  async function submitRequest() {
+    let items = [];
+    for (const cat of Object.keys(grouped)) {
+      for (const p of grouped[cat]) {
+        if (p.qty > 0) {
+          items.push({
+            product_id: p.id,
+            qty: p.qty,
+          });
+        }
+      }
+    }
+
+    if (!items.length) {
+      alert("Вы не выбрали ни одного товара");
+      return;
+    }
+
+    submitBtn.disabled = true;
+
+    try {
+      const resp = await api("/api/requisitions", {
+        method: "POST",
+        body: { items },
+      });
+      alert("Заявка отправлена!");
+      await loadProducts();
+      await loadActiveOrders();
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
+
+    submitBtn.disabled = false;
+  }
+
+  submitBtn.addEventListener("click", submitRequest);
+
+  // -------------------------------------------------------------------
+  // SEARCH
+  // -------------------------------------------------------------------
+  searchInput.addEventListener("input", () => {
+    searchTerm = searchInput.value;
+    renderCategories();
+  });
+
+  // -------------------------------------------------------------------
+  // LOAD ACTIVE ORDERS
+  // -------------------------------------------------------------------
+  async function loadActiveOrders() {
+    activeOrdersBox.innerHTML = "";
+    let resp;
+    try {
+      resp = await api("/api/my-orders");
+    } catch {
+      return;
+    }
+
+    const groups = resp.orders || [];
+    if (!groups.length) {
+      const txt = document.createElement("div");
+      txt.className = "muted";
+      txt.textContent = "Активных заказов нет.";
+      activeOrdersBox.appendChild(txt);
+      return;
+    }
+
+    for (const g of groups) {
+      const block = document.createElement("div");
+      block.className = "active-block";
+
+      const title = document.createElement("div");
+      title.className = "active-supplier";
+      title.textContent = g.supplier_name;
+      block.appendChild(title);
+
+      const list = document.createElement("div");
+      list.className = "active-items";
+
+      for (const it of g.items) {
+        const row = document.createElement("div");
+        row.className = "active-row";
+        row.textContent = `${it.name} — ${it.qty} ${it.unit}`;
+        list.appendChild(row);
+      }
+      block.appendChild(list);
+
+      const doneBtn = document.createElement("button");
+      doneBtn.className = "done-order";
+      doneBtn.textContent = "Заказ получен";
+      doneBtn.addEventListener("click", () =>
+        markDelivered(g.supplier_id)
+      );
+
+      block.appendChild(doneBtn);
+      activeOrdersBox.appendChild(block);
+    }
+  }
+
+  async function markDelivered(supplier_id) {
+    try {
+      await api(`/api/my-orders/${supplier_id}/delivered`, {
+        method: "POST",
+      });
+      await loadActiveOrders();
+      await loadProducts();
+    } catch (e) {
+      alert("Ошибка: " + e.message);
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // RUN EVERYTHING
+  // -------------------------------------------------------------------
+  async function init() {
+    try {
+      await loadProducts();
+      await loadActiveOrders();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  init();
+})();
