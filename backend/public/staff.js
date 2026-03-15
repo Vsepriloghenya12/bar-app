@@ -31,6 +31,17 @@ function statusLabel(status) {
   return "Новая";
 }
 
+function formatShortDate(value) {
+  const date = new Date(String(value || "").replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return String(value || "");
+
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm} · ${hh}:${mi}`;
+}
+
 function renderProductsByCategory(products) {
   const container = document.getElementById("category-list");
   container.innerHTML = "";
@@ -116,37 +127,45 @@ function renderActiveOrders(requisitions) {
     const supplierRows = reqItem.orders.map((order) => {
       const itemsHtml = order.items.map((it) => `
         <div class="item-line">
-          <span>${escapeHtml(it.name)}</span>
-          <span>${escapeHtml(it.qty)} ${escapeHtml(it.unit || "")}</span>
+          <span class="item-name">${escapeHtml(it.name)}</span>
+          <span class="item-qty">${escapeHtml(it.qty)} ${escapeHtml(it.unit || "")}</span>
         </div>
       `).join("");
 
       const isDelivered = order.status === "delivered";
 
       return `
-        <div class="supplier-line">
-          <div class="supplier-line-main">
-            <div class="row-title">${escapeHtml(order.supplier_name)}</div>
-            <div class="row-sub">Статус поставки</div>
+        <div class="supplier-block">
+          <div class="supplier-line">
+            <div class="supplier-line-main">
+              <div class="row-title">${escapeHtml(order.supplier_name)}</div>
+              <div class="row-sub">${order.items.length} позиций</div>
+            </div>
+            <div class="row-actions supplier-actions">
+              <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
+              <button class="ghost-btn mini-btn" ${isDelivered ? "disabled" : ""} onclick="markDelivered(${order.order_id})">
+                ${isDelivered ? "Получено" : "Отметить"}
+              </button>
+            </div>
           </div>
-          <div class="row-actions">
-            <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
-            <button class="ghost-btn mini-btn" ${isDelivered ? "disabled" : ""} onclick="markDelivered(${order.order_id})">
-              ${isDelivered ? "Получено" : "Отметить"}
-            </button>
+          <div class="supplier-items">
+            ${itemsHtml}
           </div>
         </div>
-        ${itemsHtml}
       `;
     }).join("");
 
     entry.innerHTML = `
-      <div class="req-summary static-summary">
+      <div class="req-summary static-summary compact-static-summary">
         <div class="requisition-summary-main">
-          <div class="requisition-title-row">
+          <div class="requisition-title-row compact-title-row">
             <span class="row-title">Заявка #${reqItem.requisition_id}</span>
+            <span class="status-badge ${escapeHtml((reqItem.orders || []).every((o) => o.status === "delivered") ? "delivered" : (reqItem.orders || []).some((o) => o.status === "ordered" || o.status === "delivered") ? "ordered" : "pending")}">${statusLabel((reqItem.orders || []).every((o) => o.status === "delivered") ? "delivered" : (reqItem.orders || []).some((o) => o.status === "ordered" || o.status === "delivered") ? "ordered" : "pending")}</span>
           </div>
-          <div class="requisition-subline">${escapeHtml(reqItem.created_at || "")}</div>
+          <div class="summary-meta-row">
+            <span class="summary-meta">${escapeHtml(formatShortDate(reqItem.created_at || ""))}</span>
+            <span class="summary-meta">${reqItem.orders.length} поставщика</span>
+          </div>
         </div>
       </div>
       <div class="req-details staff-open-details">

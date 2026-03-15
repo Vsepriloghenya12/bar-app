@@ -59,12 +59,22 @@ function switchAdminTab(tab) {
 function toggleRequisition(button) {
   const entry = button.closest(".req-entry");
   const details = entry?.querySelector(".req-details");
-  const arrow = entry?.querySelector(".expand-mark");
-  if (!entry || !details || !arrow) return;
+  if (!entry || !details) return;
 
   const isOpen = entry.classList.toggle("is-open");
   details.classList.toggle("hidden", !isOpen);
-  arrow.textContent = isOpen ? "−" : "+";
+  button.setAttribute("aria-expanded", String(isOpen));
+}
+
+function formatShortDate(value) {
+  const date = new Date(String(value || "").replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return String(value || "");
+
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm} · ${hh}:${mi}`;
 }
 
 async function loadSuppliers() {
@@ -325,48 +335,58 @@ async function loadOwnerRequisitions() {
   r.requisitions.forEach((reqItem) => {
     const reqStatus = requisitionStatus(reqItem.orders);
     const entry = document.createElement("div");
-    entry.className = "req-entry";
+    entry.className = `req-entry req-${reqStatus}`;
 
     const supplierRows = reqItem.orders.map((order) => {
       const itemsHtml = order.items.map((it) => `
         <div class="item-line">
-          <span>${escapeHtml(it.name)}</span>
-          <span>${escapeHtml(it.qty)} ${escapeHtml(it.unit || "")}</span>
+          <span class="item-name">${escapeHtml(it.name)}</span>
+          <span class="item-qty">${escapeHtml(it.qty)} ${escapeHtml(it.unit || "")}</span>
         </div>
       `).join("");
 
       const canMarkOrdered = order.status === "pending";
 
       return `
-        <div class="supplier-line">
-          <div class="supplier-line-main">
-            <div class="row-title">${escapeHtml(order.supplier_name)}</div>
-            <div class="row-sub">Поставщик ID: ${escapeHtml(order.supplier_id)}</div>
+        <div class="supplier-block">
+          <div class="supplier-line">
+            <div class="supplier-line-main">
+              <div class="row-title">${escapeHtml(order.supplier_name)}</div>
+              <div class="row-sub">${order.items.length} позиций · поставщик #${escapeHtml(order.supplier_id)}</div>
+            </div>
+            <div class="row-actions supplier-actions">
+              <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
+              <button class="ghost-btn mini-btn" ${canMarkOrdered ? "" : "disabled"} onclick="event.stopPropagation(); markOrdered(${order.order_id})">
+                ${canMarkOrdered ? "Заказал" : "Отмечено"}
+              </button>
+            </div>
           </div>
-          <div class="row-actions">
-            <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
-            <button class="ghost-btn mini-btn" ${canMarkOrdered ? "" : "disabled"} onclick="event.stopPropagation(); markOrdered(${order.order_id})">
-              ${canMarkOrdered ? "Заказал" : "Отмечено"}
-            </button>
+          <div class="supplier-items">
+            ${itemsHtml}
           </div>
         </div>
-        ${itemsHtml}
       `;
     }).join("");
 
     entry.innerHTML = `
-      <button type="button" class="req-summary" onclick="toggleRequisition(this)">
+      <button type="button" class="req-summary" aria-expanded="false" onclick="toggleRequisition(this)">
         <div class="requisition-summary-main">
-          <div class="requisition-title-row">
+          <div class="requisition-title-row compact-title-row">
             <span class="row-title">Заявка #${reqItem.requisition_id}</span>
-            <span class="status-badge ${reqStatus}">${statusLabel(reqStatus)}</span>
+            <span class="summary-user">${escapeHtml(reqItem.user_name || reqItem.user_id || "Сотрудник")}</span>
           </div>
-          <div class="requisition-subline">${escapeHtml(reqItem.user_name || reqItem.user_id || "Сотрудник")} · ${escapeHtml(reqItem.created_at || "")}</div>
+          <div class="summary-meta-row">
+            <span class="summary-meta">${escapeHtml(formatShortDate(reqItem.created_at || ""))}</span>
+            <span class="summary-meta">${reqItem.orders.length} поставщика</span>
+          </div>
         </div>
-        <span class="expand-mark">+</span>
+        <div class="summary-right">
+          <span class="status-badge ${reqStatus}">${statusLabel(reqStatus)}</span>
+          <span class="expand-mark">⌄</span>
+        </div>
       </button>
       <div class="req-details hidden">
-        <div class="meta-row">
+        <div class="meta-row req-meta-row">
           <span>Дата: ${escapeHtml(reqItem.created_at || "")}</span>
           <span>Поставщиков: ${reqItem.orders.length}</span>
         </div>
