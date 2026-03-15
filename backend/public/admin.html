@@ -7,71 +7,91 @@
   <link rel="stylesheet" href="./styles.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-
-<body class="owner-theme">
-<div class="anime-stickers" aria-hidden="true">
-  <span class="sticker st-1">にゃ</span>
-  <span class="sticker st-2">★</span>
-  <span class="sticker st-3">ramen</span>
-  <span class="sticker st-4">♡</span>
-  <span class="sticker st-5">senpai</span>
-  <span class="sticker st-6">✦</span>
-  <span class="sticker st-7">kawaii</span>
-  <span class="sticker st-8">ネコ</span>
-</div>
-<div class="container">
-  <h1>Панель владельца</h1>
-
-  <div class="tabs-row">
-    <button id="tab-catalog" class="tab-btn active" onclick="switchAdminTab('catalog')">Товары и поставщики</button>
-    <button id="tab-requisitions" class="tab-btn" onclick="switchAdminTab('requisitions')">Заявки сотрудников</button>
+<body class="owner-theme anime-ui">
+  <div class="anime-wall owner-wall" aria-hidden="true">
+    <span class="anime-sticker naruto">🍥 Naruto</span>
+    <span class="anime-sticker bleach">⚔️ Bleach</span>
+    <span class="anime-sticker onepiece">☠️ One Piece</span>
+    <span class="anime-sticker jjk">🟣 Jujutsu Kaisen</span>
+    <span class="anime-sticker demonslayer">🔥 Demon Slayer</span>
+    <span class="anime-sticker sailormoon">🌙 Sailor Moon</span>
+    <span class="anime-sticker aot">🪽 Attack on Titan</span>
+    <span class="anime-sticker dragonball">🐉 Dragon Ball</span>
   </div>
 
-  <section id="page-catalog" class="section-panel">
-    <h2>Поставщики</h2>
+  <div class="container app-shell">
+    <header class="hero-panel hero-owner">
+      <div class="hero-copy">
+        <div class="eyebrow">owner mode</div>
+        <h1>Панель владельца</h1>
+        <p class="hero-subtitle">Управляй каталогом, поставщиками и заявками в одном ярком anime-интерфейсе.</p>
+      </div>
+      <div class="hero-chip-row">
+        <span class="hero-chip">Naruto</span>
+        <span class="hero-chip">Bleach</span>
+        <span class="hero-chip">One Piece</span>
+      </div>
+    </header>
 
-    <div class="card">
-      <h3>Добавить поставщика</h3>
-      <input id="sup-name" placeholder="Название">
-      <input id="sup-note" placeholder="Контакты / заметка">
-      <button onclick="addSupplier()">Добавить</button>
+    <div class="tabs-row">
+      <button id="tab-catalog" class="tab-btn active" onclick="switchAdminTab('catalog')">Товары и поставщики</button>
+      <button id="tab-requisitions" class="tab-btn" onclick="switchAdminTab('requisitions')">Заявки сотрудников</button>
     </div>
 
-    <div id="suppliers"></div>
+    <section id="page-catalog" class="section-panel">
+      <div class="section-head">
+        <div>
+          <div class="section-caption">каталог</div>
+          <h2>Поставщики и товары</h2>
+        </div>
+      </div>
 
-    <hr style="opacity:0.2;margin:12px 0;">
+      <div class="card form-card">
+        <h3>Добавить поставщика</h3>
+        <div class="field-grid">
+          <input id="sup-name" placeholder="Название поставщика">
+          <input id="sup-note" placeholder="Контакты / заметка">
+        </div>
+        <button onclick="addSupplier()">Добавить поставщика</button>
+      </div>
 
-    <h2>Товары</h2>
+      <div id="suppliers"></div>
 
-    <div class="card">
-      <h3>Добавить товар</h3>
+      <hr>
 
-      <input id="prod-name" placeholder="Название товара">
-      <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
+      <div class="card form-card">
+        <h3>Добавить товар</h3>
+        <div class="field-grid">
+          <input id="prod-name" placeholder="Название товара">
+          <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
+        </div>
 
-      <label>Категория:</label>
-      <select id="prod-category"></select>
-      <input id="prod-category-new" placeholder="Новая категория (если нет в списке)">
+        <label>Категория</label>
+        <select id="prod-category"></select>
+        <input id="prod-category-new" placeholder="Новая категория, если её нет в списке">
 
-      <label>Основной поставщик:</label>
-      <select id="prod-supplier"></select>
+        <label>Основной поставщик</label>
+        <select id="prod-supplier"></select>
 
-      <button onclick="addProduct()">Добавить товар</button>
-    </div>
+        <button onclick="addProduct()">Добавить товар</button>
+      </div>
 
-    <div id="products"></div>
-  </section>
+      <div id="products"></div>
+    </section>
 
-  <section id="page-requisitions" class="section-panel hidden">
-    <div class="section-head">
-      <h2>Заявки сотрудников</h2>
-      <button class="ghost-btn" onclick="loadOwnerRequisitions()">Обновить</button>
-    </div>
+    <section id="page-requisitions" class="section-panel hidden">
+      <div class="section-head">
+        <div>
+          <div class="section-caption">workflow</div>
+          <h2>Заявки сотрудников</h2>
+        </div>
+        <button class="ghost-btn" onclick="loadOwnerRequisitions()">Обновить</button>
+      </div>
 
-    <div id="requisitions"></div>
-  </section>
-</div>
+      <div id="requisitions"></div>
+    </section>
+  </div>
 
-<script src="./admin.js"></script>
+  <script src="./admin.js"></script>
 </body>
 </html>

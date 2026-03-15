@@ -42,7 +42,7 @@ function renderProductsByCategory(products) {
 
     const header = document.createElement("div");
     header.className = "accordion-header";
-    header.innerHTML = `<span>${category}</span><span class="arrow">▶</span>`;
+    header.innerHTML = `<span class="accordion-title"><span>${category}</span><small>${items.length} позиций</small></span><span class="arrow">▶</span>`;
 
     const body = document.createElement("div");
     body.className = "accordion-body";
@@ -51,6 +51,7 @@ function renderProductsByCategory(products) {
     header.onclick = () => {
       const hidden = body.style.display === "none";
       body.style.display = hidden ? "block" : "none";
+      cat.classList.toggle("is-open", hidden);
       header.querySelector(".arrow").textContent = hidden ? "▼" : "▶";
     };
 
@@ -115,7 +116,7 @@ function renderActiveOrders(requisitions) {
   container.innerHTML = "";
 
   if (!requisitions || requisitions.length === 0) {
-    container.innerHTML = "<p class='muted'>Активных заявок нет</p>";
+    container.innerHTML = "<div class='card empty-state muted'>Активных заявок нет</div>";
     return;
   }
 

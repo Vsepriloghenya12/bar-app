@@ -45,8 +45,10 @@ function toggleAccordion(el) {
   if (!el?.classList.contains("accordion-header")) return;
   const body = el.nextElementSibling;
   const arrow = el.querySelector(".arrow");
+  const holder = el.closest(".accordion, .card");
   const isHidden = body.style.display === "none" || !body.style.display;
   body.style.display = isHidden ? "block" : "none";
+  holder?.classList.toggle("is-open", isHidden);
   if (arrow) arrow.textContent = isHidden ? "▼" : "▶";
 }
 
@@ -81,7 +83,7 @@ async function loadSuppliers() {
     div.className = "card";
     div.innerHTML = `
       <div class="accordion-header" onclick="toggleAccordion(this)">
-        <span>${escapeHtml(s.name)} <span class="muted-inline">(ID: ${s.id})</span></span>
+        <span class="accordion-title"><span>${escapeHtml(s.name)}</span><small>ID: ${s.id}</small></span>
         <span class="arrow">▶</span>
       </div>
       <div class="accordion-body" style="display:none">
@@ -185,7 +187,7 @@ async function loadProducts() {
     wrap.className = "card";
     wrap.innerHTML = `
       <div class="accordion-header" onclick="toggleAccordion(this)">
-        <span><b>${escapeHtml(category)}</b></span>
+        <span class="accordion-title"><span><b>${escapeHtml(category)}</b></span><small>${items.length} позиций</small></span>
         <span class="arrow">▶</span>
       </div>
       <div class="accordion-body" style="display:none"></div>
@@ -331,7 +333,7 @@ async function loadOwnerRequisitions() {
   box.innerHTML = "";
 
   if (!r.requisitions?.length) {
-    box.innerHTML = `<div class="card muted-text">Заявок за последний месяц пока нет</div>`;
+    box.innerHTML = `<div class="card empty-state muted-text">Заявок за последний месяц пока нет</div>`;
     return;
   }
 
