@@ -29,9 +29,16 @@ function escapeHtml(value) {
 }
 
 function statusLabel(status) {
-  if (status === "ordered") return "Заказано";
-  if (status === "delivered") return "Получено";
+  if (status === "ordered") return "Принята";
+  if (status === "delivered") return "Приехала";
   return "Новая";
+}
+
+function requisitionStatus(orders = []) {
+  if (!orders.length) return "pending";
+  if (orders.every((order) => order.status === "delivered")) return "delivered";
+  if (orders.some((order) => order.status === "ordered" || order.status === "delivered")) return "ordered";
+  return "pending";
 }
 
 function toggleAccordion(el) {
@@ -324,13 +331,15 @@ async function loadOwnerRequisitions() {
   box.innerHTML = "";
 
   if (!r.requisitions?.length) {
-    box.innerHTML = `<div class="card muted-text">Заявок пока нет</div>`;
+    box.innerHTML = `<div class="card muted-text">Заявок за последний месяц пока нет</div>`;
     return;
   }
 
   r.requisitions.forEach((reqItem) => {
     const wrap = document.createElement("div");
     wrap.className = "card requisition-card";
+
+    const reqStatus = requisitionStatus(reqItem.orders);
 
     const supplierBlocks = reqItem.orders.map((order) => {
       const itemsHtml = order.items.map((it) => `
@@ -362,14 +371,19 @@ async function loadOwnerRequisitions() {
     }).join("");
 
     wrap.innerHTML = `
-      <div class="accordion-header" onclick="toggleAccordion(this)">
-        <span>
-          <b>Заявка #${reqItem.requisition_id}</b>
-          <span class="muted-inline">— ${escapeHtml(reqItem.user_name || reqItem.user_id || "Сотрудник")}</span>
-        </span>
-        <span class="arrow">▼</span>
+      <div class="accordion-header requisition-summary" onclick="toggleAccordion(this)">
+        <div class="requisition-summary-main">
+          <div class="requisition-title-row">
+            <b>Заявка #${reqItem.requisition_id}</b>
+            <span class="status-badge ${reqStatus}">${statusLabel(reqStatus)}</span>
+          </div>
+          <div class="requisition-subline">
+            ${escapeHtml(reqItem.user_name || reqItem.user_id || "Сотрудник")} · ${escapeHtml(reqItem.created_at || "")}
+          </div>
+        </div>
+        <span class="arrow">▶</span>
       </div>
-      <div class="accordion-body" style="display:block">
+      <div class="accordion-body" style="display:none">
         <div class="meta-row">
           <span>Дата: ${escapeHtml(reqItem.created_at || "")}</span>
           <span>Поставщиков: ${reqItem.orders.length}</span>

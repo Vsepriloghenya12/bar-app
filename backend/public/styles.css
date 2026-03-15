@@ -458,3 +458,172 @@ button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ======================================================
+   OWNER THEME — ANIME STICKERS
+   ====================================================== */
+
+body.owner-theme {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(255, 179, 217, 0.2), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(158, 194, 255, 0.16), transparent 30%),
+    linear-gradient(180deg, #1f1730 0%, #15111f 100%);
+  color: #fff5fb;
+  overflow-x: hidden;
+}
+
+.owner-theme .container {
+  position: relative;
+  z-index: 2;
+  max-width: 620px;
+  padding: 14px 0 34px;
+}
+
+.owner-theme .container::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+}
+
+.owner-theme h1 {
+  color: #ffd7ef;
+  text-shadow: 0 0 18px rgba(255, 146, 194, 0.26);
+}
+
+.owner-theme h2,
+.owner-theme h3,
+.owner-theme label {
+  color: #ffe8f5;
+}
+
+.owner-theme .card,
+.owner-theme .supplier-order-card,
+.owner-theme .accordion,
+.owner-theme .order-block {
+  background: rgba(33, 24, 48, 0.88);
+  border: 1px solid rgba(255, 198, 230, 0.16);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
+}
+
+.owner-theme .accordion-header,
+.owner-theme .tab-btn,
+.owner-theme .ghost-btn {
+  background: rgba(45, 32, 66, 0.92);
+  border: 1px solid rgba(255, 210, 238, 0.14);
+}
+
+.owner-theme input,
+.owner-theme select,
+.owner-theme textarea {
+  background: rgba(26, 20, 40, 0.95);
+  border-color: rgba(255, 203, 233, 0.18);
+  color: #fff7fb;
+}
+
+.owner-theme input:focus,
+.owner-theme select:focus,
+.owner-theme textarea:focus {
+  border-color: #ff9fcb;
+  background: rgba(33, 26, 50, 0.98);
+}
+
+.owner-theme button {
+  background: linear-gradient(180deg, #ffd0ec 0%, #ffaad8 100%);
+  color: #261326;
+  font-weight: 700;
+}
+
+.owner-theme button:hover {
+  background: linear-gradient(180deg, #ffd7f0 0%, #ff93cf 100%);
+}
+
+.owner-theme .tab-btn.active {
+  background: linear-gradient(180deg, #fff0fb 0%, #ffc8e8 100%);
+  color: #3e1732;
+  box-shadow: 0 0 22px rgba(255, 177, 219, 0.24);
+}
+
+.owner-theme .ghost-btn {
+  color: #fff0f9;
+}
+
+.owner-theme .accordion-header .arrow {
+  color: #ffc1df;
+}
+
+.requisition-summary {
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.requisition-summary-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.requisition-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.requisition-subline {
+  margin-top: 6px;
+  color: #bbaec8;
+  font-size: 12px;
+}
+
+.owner-theme .requisition-subline {
+  color: #d4b7cd;
+}
+
+.anime-stickers {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.sticker {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: #fff8fc;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+  border: 1px solid rgba(255,255,255,0.26);
+  backdrop-filter: blur(8px);
+  opacity: 0.82;
+}
+
+.st-1 { top: 7%; left: 5%; transform: rotate(-14deg); background: rgba(255, 137, 189, 0.18); }
+.st-2 { top: 16%; right: 7%; transform: rotate(11deg); background: rgba(255, 214, 110, 0.18); }
+.st-3 { top: 34%; left: 3%; transform: rotate(-9deg); background: rgba(255, 170, 130, 0.18); }
+.st-4 { top: 48%; right: 10%; transform: rotate(8deg); background: rgba(255, 154, 209, 0.18); }
+.st-5 { bottom: 18%; left: 7%; transform: rotate(-10deg); background: rgba(173, 169, 255, 0.18); }
+.st-6 { bottom: 10%; right: 15%; transform: rotate(9deg); background: rgba(125, 223, 255, 0.18); }
+.st-7 { top: 72%; left: 40%; transform: rotate(-6deg); background: rgba(255, 179, 217, 0.18); }
+.st-8 { top: 26%; left: 48%; transform: rotate(7deg); background: rgba(182, 242, 192, 0.18); }
+
+@media (max-width: 640px) {
+  .sticker {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .st-3,
+  .st-7 {
+    display: none;
+  }
+}

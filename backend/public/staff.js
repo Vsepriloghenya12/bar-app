@@ -17,8 +17,8 @@ async function API(path, method = "GET", data = null) {
 }
 
 function statusLabel(status) {
-  if (status === "ordered") return "Заказано";
-  if (status === "delivered") return "Получено";
+  if (status === "ordered") return "Принята";
+  if (status === "delivered") return "Приехала";
   return "Новая";
 }
 

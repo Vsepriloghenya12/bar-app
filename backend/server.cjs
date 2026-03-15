@@ -318,6 +318,37 @@ function buildRequisitionMessage(reqId, userName){
   return text.trim();
 }
 
+function purgeOldRequisitions(){
+  const oldReqIds = db.prepare(`
+    SELECT id
+    FROM requisitions
+    WHERE datetime(created_at) < datetime('now', '-30 days')
+  `).all().map((row) => row.id);
+
+  if (!oldReqIds.length) return 0;
+
+  const qmReq = oldReqIds.map(() => '?').join(',');
+  const oldOrderIds = db.prepare(`
+    SELECT id
+    FROM orders
+    WHERE requisition_id IN (${qmReq})
+  `).all(...oldReqIds).map((row) => row.id);
+
+  const trx = db.transaction(() => {
+    if (oldOrderIds.length){
+      const qmOrders = oldOrderIds.map(() => '?').join(',');
+      db.prepare(`DELETE FROM order_items WHERE order_id IN (${qmOrders})`).run(...oldOrderIds);
+      db.prepare(`DELETE FROM orders WHERE id IN (${qmOrders})`).run(...oldOrderIds);
+    }
+
+    db.prepare(`DELETE FROM requisition_items WHERE requisition_id IN (${qmReq})`).run(...oldReqIds);
+    db.prepare(`DELETE FROM requisitions WHERE id IN (${qmReq})`).run(...oldReqIds);
+  });
+
+  trx();
+  return oldReqIds.length;
+}
+
 /* -------------------------------------------------- */
 /* SUPPLIERS API */
 /* -------------------------------------------------- */
@@ -587,6 +618,7 @@ app.get('/api/products', auth, (req,res)=>{
 /* -------------------------------------------------- */
 
 app.post('/api/requisitions', auth, async (req,res)=>{
+  purgeOldRequisitions();
   const { items } = req.body||{};
   if (!Array.isArray(items) || items.length === 0)
     return res.status(400).json({ ok:false, error:"items required" });
@@ -663,6 +695,7 @@ app.post('/api/requisitions', auth, async (req,res)=>{
 /* -------------------------------------------------- */
 
 app.get('/api/admin/requisitions', auth, admin, (req,res)=>{
+  purgeOldRequisitions();
   const rows = db.prepare(`
     SELECT
       r.id AS requisition_id,
@@ -751,6 +784,7 @@ app.post('/api/admin/orders/:orderId/ordered', auth, admin, (req,res)=>{
 /* -------------------------------------------------- */
 
 app.get('/api/my-orders', auth, (req,res)=>{
+  purgeOldRequisitions();
   const rows = db.prepare(`
     SELECT
       r.id AS requisition_id,
@@ -872,6 +906,7 @@ app.get("/favicon.ico", (req,res)=> res.status(204).end());
   try{
     await loadDb();
     try{ migrate(); }catch{}
+    try{ purgeOldRequisitions(); }catch{}
     const port = Number(process.env.PORT||8080);
     app.listen(port, ()=> console.log("API listening on", port));
   }catch(err){
