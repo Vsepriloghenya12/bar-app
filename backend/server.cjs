@@ -416,6 +416,7 @@ app.delete('/api/admin/suppliers/:id', auth, admin, (req,res)=>{
    CATEGORIES (NEW)
    ===================================================== */
 
+
 app.get('/api/admin/categories', auth, admin, (req, res) => {
   const rows = db.prepare(`
     SELECT DISTINCT category
@@ -426,7 +427,6 @@ app.get('/api/admin/categories', auth, admin, (req, res) => {
 
   res.json({ ok: true, categories: rows.map(r => r.category) });
 });
-
 
 /* -------------------------------------------------- */
 /* PRODUCTS API */
@@ -467,7 +467,6 @@ app.post('/api/admin/products', auth, admin, (req,res)=>{
       .get(r.lastInsertRowid);
 
     res.json({ ok:true, product: row });
-
   }catch{
     res.status(400).json({ ok:false, error:"Товар уже существует" });
   }
@@ -504,7 +503,6 @@ app.patch('/api/admin/products/:id', auth, admin, (req,res)=>{
 
     const updated = db.prepare(`SELECT * FROM products WHERE id=?`).get(pid);
     res.json({ ok:true, product: updated });
-
   }catch{
     res.status(400).json({ ok:false, error:"Товар уже существует" });
   }
@@ -529,26 +527,6 @@ app.delete('/api/admin/products/:id', auth, admin, (req,res)=>{
     res.status(400).json({ ok:false, error:"Ошибка удаления" });
   }
 });
-async function loadCategories() {
-  const r = await api('/api/admin/categories');
-  if (!r.ok) return;
-
-  const sel = document.getElementById('product-category');
-  sel.innerHTML = "";
-
-  r.categories.forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c;
-    opt.textContent = c;
-    sel.appendChild(opt);
-  });
-
-  // Добавляем пункт "Новая категория"
-  const optNew = document.createElement('option');
-  optNew.value = "__new";
-  optNew.textContent = "— новая категория —";
-  sel.appendChild(optNew);
-}
 
 /* -------------------------------------------------- */
 /* PRODUCT ALTERNATIVES */
@@ -599,7 +577,7 @@ app.get('/api/products', auth, (req,res)=>{
   const rows = db.prepare(`
     SELECT * FROM products
     WHERE active=1
-    ORDER BY name
+    ORDER BY category, name
   `).all();
   res.json({ ok:true, products: rows });
 });
@@ -649,7 +627,6 @@ app.post('/api/requisitions', auth, async (req,res)=>{
       if (!prod) throw new Error("Product not found");
 
       const sid = prod.supplier_id;
-
       insRI.run(reqId,pid,qty);
 
       let oid = orderMap.get(sid);
@@ -667,24 +644,106 @@ app.post('/api/requisitions', auth, async (req,res)=>{
 
   try {
     const id = trx();
-
-    // Формируем подробное сообщение
-    const msg = buildRequisitionMessage(
-      id,
-      req.user.name || req.user.tg_user_id
-    );
+    const msg = buildRequisitionMessage(id, req.user.name || req.user.tg_user_id);
 
     try {
-      notifyAdmins(msg);   // отправка в Telegram
+      notifyAdmins(msg);
     } catch (err) {
       console.warn("Telegram notify error:", err?.message || err);
     }
 
     res.json({ ok: true, requisition_id: id });
-
-} catch (e) {
+  } catch (e) {
     res.status(400).json({ ok: false, error: String(e.message) });
-}
+  }
+});
+
+/* -------------------------------------------------- */
+/* OWNER — REQUISITIONS */
+/* -------------------------------------------------- */
+
+app.get('/api/admin/requisitions', auth, admin, (req,res)=>{
+  const rows = db.prepare(`
+    SELECT
+      r.id AS requisition_id,
+      r.created_at AS requisition_created_at,
+      r.user_id,
+      COALESCE(u.name, r.user_id) AS user_name,
+      o.id AS order_id,
+      o.supplier_id,
+      o.status,
+      s.name AS supplier_name,
+      p.id AS product_id,
+      p.name AS product_name,
+      p.unit,
+      oi.qty_requested AS qty
+    FROM requisitions r
+    LEFT JOIN users u ON u.tg_user_id = r.user_id
+    LEFT JOIN orders o ON o.requisition_id = r.id
+    LEFT JOIN suppliers s ON s.id = o.supplier_id
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN products p ON p.id = oi.product_id
+    ORDER BY r.id DESC, s.name, p.name
+  `).all();
+
+  const reqMap = new Map();
+
+  for (const row of rows){
+    if (!reqMap.has(row.requisition_id)){
+      reqMap.set(row.requisition_id, {
+        requisition_id: row.requisition_id,
+        created_at: row.requisition_created_at,
+        user_id: row.user_id,
+        user_name: row.user_name,
+        orders: []
+      });
+    }
+
+    const reqItem = reqMap.get(row.requisition_id);
+
+    if (!row.order_id) continue;
+
+    let order = reqItem.orders.find((item) => item.order_id === row.order_id);
+    if (!order){
+      order = {
+        order_id: row.order_id,
+        supplier_id: row.supplier_id,
+        supplier_name: row.supplier_name,
+        status: row.status,
+        items: []
+      };
+      reqItem.orders.push(order);
+    }
+
+    if (row.product_id){
+      order.items.push({
+        product_id: row.product_id,
+        name: row.product_name,
+        unit: row.unit,
+        qty: row.qty
+      });
+    }
+  }
+
+  res.json({ ok:true, requisitions: Array.from(reqMap.values()) });
+});
+
+app.post('/api/admin/orders/:orderId/ordered', auth, admin, (req,res)=>{
+  const orderId = Number(req.params.orderId);
+  if (!orderId)
+    return res.status(400).json({ ok:false, error:"bad order id" });
+
+  const order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(orderId);
+  if (!order)
+    return res.status(404).json({ ok:false, error:"Заказ не найден" });
+
+  db.prepare(`
+    UPDATE orders
+    SET status='ordered'
+    WHERE id=?
+  `).run(orderId);
+
+  res.json({ ok:true });
 });
 
 /* -------------------------------------------------- */
@@ -693,58 +752,87 @@ app.post('/api/requisitions', auth, async (req,res)=>{
 
 app.get('/api/my-orders', auth, (req,res)=>{
   const rows = db.prepare(`
-    SELECT 
+    SELECT
+      r.id AS requisition_id,
+      r.created_at AS requisition_created_at,
       o.id AS order_id,
       o.supplier_id,
+      o.status,
       s.name AS supplier_name,
       p.id AS product_id,
       p.name AS product_name,
-      p.unit AS unit,
+      p.unit,
       oi.qty_requested AS qty
-    FROM orders o
-    JOIN suppliers s ON s.id=o.supplier_id
-    JOIN order_items oi ON oi.order_id=o.id
-    JOIN products p ON p.id=oi.product_id
-    WHERE o.status='pending'
-    ORDER BY s.name,p.name
-  `).all();
+    FROM requisitions r
+    JOIN orders o ON o.requisition_id = r.id
+    JOIN suppliers s ON s.id = o.supplier_id
+    JOIN order_items oi ON oi.order_id = o.id
+    JOIN products p ON p.id = oi.product_id
+    WHERE r.user_id = ?
+      AND o.status IN ('pending', 'ordered')
+    ORDER BY r.id DESC, s.name, p.name
+  `).all(req.user.tg_user_id);
 
-  const map = new Map();
+  const reqMap = new Map();
 
-  for (const r of rows){
-    if (!map.has(r.supplier_id)){
-      map.set(r.supplier_id,{
-        supplier_id:r.supplier_id,
-        supplier_name:r.supplier_name,
-        items:[]
+  for (const row of rows){
+    if (!reqMap.has(row.requisition_id)){
+      reqMap.set(row.requisition_id, {
+        requisition_id: row.requisition_id,
+        created_at: row.requisition_created_at,
+        orders: []
       });
     }
 
-    map.get(r.supplier_id).items.push({
-      product_id:r.product_id,
-      name:r.product_name,
-      unit:r.unit,
-      qty:r.qty
+    const reqItem = reqMap.get(row.requisition_id);
+    let order = reqItem.orders.find((item) => item.order_id === row.order_id);
+
+    if (!order){
+      order = {
+        order_id: row.order_id,
+        supplier_id: row.supplier_id,
+        supplier_name: row.supplier_name,
+        status: row.status,
+        items: []
+      };
+      reqItem.orders.push(order);
+    }
+
+    order.items.push({
+      product_id: row.product_id,
+      name: row.product_name,
+      unit: row.unit,
+      qty: row.qty
     });
   }
 
-  res.json({ ok:true, orders:Array.from(map.values()) });
+  res.json({ ok:true, requisitions: Array.from(reqMap.values()) });
 });
 
 /* -------------------------------------------------- */
 /* STAFF — MARK DELIVERED */
 /* -------------------------------------------------- */
 
-app.post('/api/my-orders/:supplier_id/delivered', auth, (req,res)=>{
-  const sid = Number(req.params.supplier_id);
-  if (!sid)
-    return res.status(400).json({ ok:false, error:"bad supplier id" });
+app.post('/api/my-orders/:orderId/delivered', auth, (req,res)=>{
+  const orderId = Number(req.params.orderId);
+  if (!orderId)
+    return res.status(400).json({ ok:false, error:"bad order id" });
+
+  const ownsOrder = db.prepare(`
+    SELECT o.id
+    FROM orders o
+    JOIN requisitions r ON r.id = o.requisition_id
+    WHERE o.id = ? AND r.user_id = ?
+  `).get(orderId, req.user.tg_user_id);
+
+  if (!ownsOrder)
+    return res.status(404).json({ ok:false, error:"Заказ не найден" });
 
   db.prepare(`
     UPDATE orders
     SET status='delivered'
-    WHERE supplier_id=? AND status='pending'
-  `).run(sid);
+    WHERE id=?
+  `).run(orderId);
 
   res.json({ ok:true });
 });

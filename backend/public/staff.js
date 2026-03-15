@@ -2,16 +2,11 @@
 
 const API_BASE = location.origin;
 
-// Универсальный запрос
 async function API(path, method = "GET", data = null) {
   const opts = { method, headers: {} };
-
-  // Telegram initData
   const tg = window.Telegram?.WebApp;
-  if (tg?.initData) {
-    opts.headers["X-TG-INIT-DATA"] = tg.initData;
-  }
 
+  if (tg?.initData) opts.headers["X-TG-INIT-DATA"] = tg.initData;
   if (data) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(data);
@@ -21,8 +16,14 @@ async function API(path, method = "GET", data = null) {
   return await res.json().catch(() => ({}));
 }
 
+function statusLabel(status) {
+  if (status === "ordered") return "Заказано";
+  if (status === "delivered") return "Получено";
+  return "Новая";
+}
+
 /* -------------------------------------------------- */
-/* ЗАГРУЗКА ТОВАРОВ — ГРУППИРОВКА ПО КАТЕГОРИЯМ        */
+/* ЗАГРУЗКА ТОВАРОВ                                    */
 /* -------------------------------------------------- */
 
 function renderProductsByCategory(products) {
@@ -53,8 +54,7 @@ function renderProductsByCategory(products) {
       header.querySelector(".arrow").textContent = hidden ? "▼" : "▶";
     };
 
-    // товары внутри категории
-    items.forEach(p => {
+    items.forEach((p) => {
       const row = document.createElement("div");
       row.className = "product-row";
       row.innerHTML = `
@@ -70,23 +70,22 @@ function renderProductsByCategory(products) {
   }
 }
 
-// загрузка товаров
 function loadProducts() {
-  API("/api/products").then(r => {
+  API("/api/products").then((r) => {
     if (!r.ok) return alert("Ошибка загрузки товаров");
     renderProductsByCategory(r.products);
   });
 }
 
 /* -------------------------------------------------- */
-/* ОТПРАВКА ЗАЯВКИ                                    */
+/* ОТПРАВКА ЗАЯВКИ                                     */
 /* -------------------------------------------------- */
 
 document.getElementById("send-btn").onclick = async () => {
   const qtyInputs = document.querySelectorAll("[id^='qty-']");
   const items = [];
 
-  qtyInputs.forEach(input => {
+  qtyInputs.forEach((input) => {
     const v = Number(input.value);
     if (v > 0) {
       const pid = Number(input.id.replace("qty-", ""));
@@ -94,49 +93,66 @@ document.getElementById("send-btn").onclick = async () => {
     }
   });
 
-  if (items.length === 0)
-    return alert("Выберите хотя бы один товар");
+  if (items.length === 0) return alert("Выберите хотя бы один товар");
 
   const r = await API("/api/requisitions", "POST", { items });
   if (!r.ok) return alert(r.error);
 
-  alert("Заявка отправлена!");
+  qtyInputs.forEach((input) => {
+    input.value = "";
+  });
+
+  alert(`Заявка #${r.requisition_id} отправлена!`);
   loadActiveOrders();
 };
 
 /* -------------------------------------------------- */
-/* АКТИВНЫЕ ЗАЯВКИ                                    */
+/* АКТИВНЫЕ ЗАЯВКИ                                     */
 /* -------------------------------------------------- */
 
-function renderActiveOrders(data) {
+function renderActiveOrders(requisitions) {
   const container = document.getElementById("active-orders");
   container.innerHTML = "";
 
-  if (!data || data.length === 0) {
+  if (!requisitions || requisitions.length === 0) {
     container.innerHTML = "<p class='muted'>Активных заявок нет</p>";
     return;
   }
 
-  data.forEach(order => {
+  requisitions.forEach((reqItem) => {
     const block = document.createElement("div");
     block.className = "order-block";
 
-    block.innerHTML = `
-      <div class="order-head">
-        <b>${order.supplier_name}</b>
-        <button class="mini-btn" onclick="markDelivered(${order.supplier_id})">Получено</button>
-      </div>
-    `;
+    const suppliersHtml = reqItem.orders.map((order) => {
+      const itemsHtml = order.items.map((it) => `
+        <div class="order-item">
+          <span>${it.name}</span>
+          <span>${it.qty} ${it.unit}</span>
+        </div>
+      `).join("");
 
-    order.items.forEach(it => {
-      const row = document.createElement("div");
-      row.className = "order-item";
-      row.innerHTML = `
-        <span>${it.name}</span>
-        <span>${it.qty} ${it.unit}</span>
+      return `
+        <div class="supplier-order-card">
+          <div class="order-head">
+            <div>
+              <b>${order.supplier_name}</b>
+              <div class="muted-text">Статус: ${statusLabel(order.status)}</div>
+            </div>
+            <div class="order-head-actions">
+              <span class="status-badge ${order.status}">${statusLabel(order.status)}</span>
+              <button class="mini-btn" onclick="markDelivered(${order.order_id})">Получено</button>
+            </div>
+          </div>
+          ${itemsHtml}
+        </div>
       `;
-      block.appendChild(row);
-    });
+    }).join("");
+
+    block.innerHTML = `
+      <div class="order-title"><b>Заявка #${reqItem.requisition_id}</b></div>
+      <div class="muted-text">Дата: ${reqItem.created_at || ""}</div>
+      <div class="orders-stack">${suppliersHtml}</div>
+    `;
 
     container.appendChild(block);
   });
@@ -145,18 +161,14 @@ function renderActiveOrders(data) {
 async function loadActiveOrders() {
   const r = await API("/api/my-orders");
   if (!r.ok) return;
-  renderActiveOrders(r.orders);
+  renderActiveOrders(r.requisitions);
 }
 
-async function markDelivered(supplier_id) {
-  const r = await API(`/api/my-orders/${supplier_id}/delivered`, "POST");
-  if (!r.ok) return alert(r.error);
+async function markDelivered(orderId) {
+  const r = await API(`/api/my-orders/${orderId}/delivered`, "POST");
+  if (!r.ok) return alert(r.error || "Не удалось отметить получение");
   loadActiveOrders();
 }
-
-/* -------------------------------------------------- */
-/* СТАРТ                                              */
-/* -------------------------------------------------- */
 
 loadProducts();
 loadActiveOrders();

@@ -3,50 +3,63 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Админ — Заявки</title>
+  <title>Владелец — Заявки</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 
 <body>
 <div class="container">
-  
-  <h1>Поставщики</h1>
+  <h1>Панель владельца</h1>
 
-  <!-- Add supplier -->
-  <div class="card">
-    <h3>Добавить поставщика</h3>
-    <input id="sup-name" placeholder="Название">
-    <input id="sup-note" placeholder="Контакты / заметка">
-
-    <button onclick="addSupplier()">Добавить</button>
+  <div class="tabs-row">
+    <button id="tab-catalog" class="tab-btn active" onclick="switchAdminTab('catalog')">Товары и поставщики</button>
+    <button id="tab-requisitions" class="tab-btn" onclick="switchAdminTab('requisitions')">Заявки сотрудников</button>
   </div>
 
-  <div id="suppliers"></div>
+  <section id="page-catalog" class="section-panel">
+    <h2>Поставщики</h2>
 
-  <hr style="opacity:0.2;margin:12px 0;">
+    <div class="card">
+      <h3>Добавить поставщика</h3>
+      <input id="sup-name" placeholder="Название">
+      <input id="sup-note" placeholder="Контакты / заметка">
+      <button onclick="addSupplier()">Добавить</button>
+    </div>
 
-  <h1>Товары</h1>
+    <div id="suppliers"></div>
 
-  <!-- Add product -->
-  <div class="card">
-    <h3>Добавить товар</h3>
+    <hr style="opacity:0.2;margin:12px 0;">
 
-    <input id="prod-name" placeholder="Название товара">
-    <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
-    
-    <label>Категория:</label>
-    <select id="prod-category"></select>
-    <input id="prod-category-new" placeholder="Новая категория (если нет в списке)">
+    <h2>Товары</h2>
 
-    <label>Основной поставщик:</label>
-    <select id="prod-supplier"></select>
+    <div class="card">
+      <h3>Добавить товар</h3>
 
-    <button onclick="addProduct()">Добавить товар</button>
-  </div>
+      <input id="prod-name" placeholder="Название товара">
+      <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
 
-  <div id="products"></div>
+      <label>Категория:</label>
+      <select id="prod-category"></select>
+      <input id="prod-category-new" placeholder="Новая категория (если нет в списке)">
 
+      <label>Основной поставщик:</label>
+      <select id="prod-supplier"></select>
+
+      <button onclick="addProduct()">Добавить товар</button>
+    </div>
+
+    <div id="products"></div>
+  </section>
+
+  <section id="page-requisitions" class="section-panel hidden">
+    <div class="section-head">
+      <h2>Заявки сотрудников</h2>
+      <button class="ghost-btn" onclick="loadOwnerRequisitions()">Обновить</button>
+    </div>
+
+    <div id="requisitions"></div>
+  </section>
 </div>
 
 <script src="./admin.js"></script>
