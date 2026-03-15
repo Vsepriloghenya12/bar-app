@@ -9,27 +9,21 @@
 </head>
 <body class="owner-theme anime-ui">
   <div class="anime-wall owner-wall" aria-hidden="true">
-    <span class="anime-sticker naruto">🍥 Naruto</span>
-    <span class="anime-sticker bleach">⚔️ Bleach</span>
-    <span class="anime-sticker onepiece">☠️ One Piece</span>
-    <span class="anime-sticker jjk">🟣 Jujutsu Kaisen</span>
-    <span class="anime-sticker demonslayer">🔥 Demon Slayer</span>
-    <span class="anime-sticker sailormoon">🌙 Sailor Moon</span>
-    <span class="anime-sticker aot">🪽 Attack on Titan</span>
-    <span class="anime-sticker dragonball">🐉 Dragon Ball</span>
+    <span class="anime-logo naruto"></span>
+    <span class="anime-logo bleach"></span>
+    <span class="anime-logo onepiece"></span>
+    <span class="anime-logo jjk"></span>
+    <span class="anime-logo demonslayer"></span>
+    <span class="anime-logo sailormoon"></span>
+    <span class="anime-logo aot"></span>
+    <span class="anime-logo dragonball"></span>
   </div>
 
   <div class="container app-shell">
-    <header class="hero-panel hero-owner">
-      <div class="hero-copy">
-        <div class="eyebrow">owner mode</div>
+    <header class="topbar">
+      <div>
+        <div class="role-pill">owner</div>
         <h1>Панель владельца</h1>
-        <p class="hero-subtitle">Управляй каталогом, поставщиками и заявками в одном ярком anime-интерфейсе.</p>
-      </div>
-      <div class="hero-chip-row">
-        <span class="hero-chip">Naruto</span>
-        <span class="hero-chip">Bleach</span>
-        <span class="hero-chip">One Piece</span>
       </div>
     </header>
 
@@ -38,16 +32,12 @@
       <button id="tab-requisitions" class="tab-btn" onclick="switchAdminTab('requisitions')">Заявки сотрудников</button>
     </div>
 
-    <section id="page-catalog" class="section-panel">
+    <section id="page-catalog" class="section-shell">
       <div class="section-head">
-        <div>
-          <div class="section-caption">каталог</div>
-          <h2>Поставщики и товары</h2>
-        </div>
+        <h2>Поставщики</h2>
       </div>
 
-      <div class="card form-card">
-        <h3>Добавить поставщика</h3>
+      <div class="form-card form-stack">
         <div class="field-grid">
           <input id="sup-name" placeholder="Название поставщика">
           <input id="sup-note" placeholder="Контакты / заметка">
@@ -55,40 +45,47 @@
         <button onclick="addSupplier()">Добавить поставщика</button>
       </div>
 
-      <div id="suppliers"></div>
+      <div id="suppliers" class="list-sheet"></div>
 
-      <hr>
+      <div class="section-head section-gap">
+        <h2>Товары</h2>
+      </div>
 
-      <div class="card form-card">
-        <h3>Добавить товар</h3>
+      <div class="form-card form-stack">
         <div class="field-grid">
           <input id="prod-name" placeholder="Название товара">
           <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
         </div>
 
-        <label>Категория</label>
-        <select id="prod-category"></select>
-        <input id="prod-category-new" placeholder="Новая категория, если её нет в списке">
+        <div class="field-grid stacked-mobile">
+          <div>
+            <label>Категория</label>
+            <select id="prod-category"></select>
+          </div>
+          <div>
+            <label>Новая категория</label>
+            <input id="prod-category-new" placeholder="Если категории нет в списке">
+          </div>
+        </div>
 
-        <label>Основной поставщик</label>
-        <select id="prod-supplier"></select>
+        <div>
+          <label>Основной поставщик</label>
+          <select id="prod-supplier"></select>
+        </div>
 
         <button onclick="addProduct()">Добавить товар</button>
       </div>
 
-      <div id="products"></div>
+      <div id="products" class="list-sheet"></div>
     </section>
 
-    <section id="page-requisitions" class="section-panel hidden">
+    <section id="page-requisitions" class="section-shell hidden">
       <div class="section-head">
-        <div>
-          <div class="section-caption">workflow</div>
-          <h2>Заявки сотрудников</h2>
-        </div>
+        <h2>Заявки сотрудников</h2>
         <button class="ghost-btn" onclick="loadOwnerRequisitions()">Обновить</button>
       </div>
 
-      <div id="requisitions"></div>
+      <div id="requisitions" class="list-sheet"></div>
     </section>
   </div>
 

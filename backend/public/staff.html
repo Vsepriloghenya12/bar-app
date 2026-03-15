@@ -9,51 +9,37 @@
 </head>
 <body class="staff-theme anime-ui">
   <div class="anime-wall staff-wall" aria-hidden="true">
-    <span class="anime-sticker naruto">🍥 Naruto</span>
-    <span class="anime-sticker bleach">⚔️ Bleach</span>
-    <span class="anime-sticker onepiece">☠️ One Piece</span>
-    <span class="anime-sticker haikyuu">🏐 Haikyuu!!</span>
-    <span class="anime-sticker chainsaw">🪚 Chainsaw Man</span>
-    <span class="anime-sticker jjk">🟣 Jujutsu Kaisen</span>
-    <span class="anime-sticker tokyoghoul">🕸️ Tokyo Ghoul</span>
-    <span class="anime-sticker sailor">🌙 Sailor Moon</span>
+    <span class="anime-logo naruto"></span>
+    <span class="anime-logo bleach"></span>
+    <span class="anime-logo onepiece"></span>
+    <span class="anime-logo haikyuu"></span>
+    <span class="anime-logo chainsaw"></span>
+    <span class="anime-logo jjk"></span>
+    <span class="anime-logo tokyoghoul"></span>
+    <span class="anime-logo sailormoon"></span>
   </div>
 
   <div class="container app-shell">
-    <header class="hero-panel hero-staff">
-      <div class="hero-copy">
-        <div class="eyebrow">staff mode</div>
-        <h1>Создать заявку</h1>
-        <p class="hero-subtitle">Быстрый заказ товаров и контроль статусов в новом стиле с аниме-стикерами.</p>
-      </div>
-      <div class="hero-chip-row">
-        <span class="hero-chip">JJK</span>
-        <span class="hero-chip">Naruto</span>
-        <span class="hero-chip">One Piece</span>
+    <header class="topbar">
+      <div>
+        <div class="role-pill">staff</div>
+        <h1>Заявка</h1>
       </div>
     </header>
 
-    <section class="section-panel">
+    <section class="section-shell">
       <div class="section-head">
-        <div>
-          <div class="section-caption">new order</div>
-          <h2>Товары по категориям</h2>
-        </div>
+        <h2>Товары</h2>
       </div>
-      <div id="category-list"></div>
+      <div id="category-list" class="list-sheet"></div>
       <button id="send-btn" class="primary-btn">Отправить заявку</button>
     </section>
 
-    <hr>
-
-    <section class="section-panel">
+    <section class="section-shell section-gap-large">
       <div class="section-head">
-        <div>
-          <div class="section-caption">tracking</div>
-          <h2>Активные заявки</h2>
-        </div>
+        <h2>Активные заявки</h2>
       </div>
-      <div id="active-orders"></div>
+      <div id="active-orders" class="list-sheet"></div>
     </section>
   </div>
 

@@ -1,7 +1,3 @@
-/* ============================================
-   OWNER PANEL
-   ============================================ */
-
 function tg() {
   return window.Telegram?.WebApp?.initData || "";
 }
@@ -28,6 +24,10 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+function jsString(value) {
+  return JSON.stringify(String(value ?? ""));
+}
+
 function statusLabel(status) {
   if (status === "ordered") return "Принята";
   if (status === "delivered") return "Приехала";
@@ -39,17 +39,6 @@ function requisitionStatus(orders = []) {
   if (orders.every((order) => order.status === "delivered")) return "delivered";
   if (orders.some((order) => order.status === "ordered" || order.status === "delivered")) return "ordered";
   return "pending";
-}
-
-function toggleAccordion(el) {
-  if (!el?.classList.contains("accordion-header")) return;
-  const body = el.nextElementSibling;
-  const arrow = el.querySelector(".arrow");
-  const holder = el.closest(".accordion, .card");
-  const isHidden = body.style.display === "none" || !body.style.display;
-  body.style.display = isHidden ? "block" : "none";
-  holder?.classList.toggle("is-open", isHidden);
-  if (arrow) arrow.textContent = isHidden ? "▼" : "▶";
 }
 
 function switchAdminTab(tab) {
@@ -67,9 +56,16 @@ function switchAdminTab(tab) {
   if (!isCatalog) loadOwnerRequisitions();
 }
 
-/* =====================================================
-   SUPPLIERS
-   ===================================================== */
+function toggleRequisition(button) {
+  const entry = button.closest(".req-entry");
+  const details = entry?.querySelector(".req-details");
+  const arrow = entry?.querySelector(".expand-mark");
+  if (!entry || !details || !arrow) return;
+
+  const isOpen = entry.classList.toggle("is-open");
+  details.classList.toggle("hidden", !isOpen);
+  arrow.textContent = isOpen ? "−" : "+";
+}
 
 async function loadSuppliers() {
   const r = await API("/api/admin/suppliers");
@@ -78,23 +74,25 @@ async function loadSuppliers() {
   const box = document.getElementById("suppliers");
   box.innerHTML = "";
 
+  if (!r.suppliers?.length) {
+    box.innerHTML = `<div class="empty-state muted-text">Поставщиков пока нет</div>`;
+    return;
+  }
+
   r.suppliers.forEach((s) => {
-    const div = document.createElement("div");
-    div.className = "card";
-    div.innerHTML = `
-      <div class="accordion-header" onclick="toggleAccordion(this)">
-        <span class="accordion-title"><span>${escapeHtml(s.name)}</span><small>ID: ${s.id}</small></span>
-        <span class="arrow">▶</span>
+    const row = document.createElement("div");
+    row.className = "list-row supplier-row";
+    row.innerHTML = `
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(s.name)}</div>
+        <div class="row-sub">${escapeHtml(s.contact_note || "Без заметки")}</div>
       </div>
-      <div class="accordion-body" style="display:none">
-        <div><b>Контакт:</b> ${escapeHtml(s.contact_note || "—")}</div>
-        <div class="actions-row">
-          <button onclick="editSupplier(${s.id}, '${escapeHtml(s.name)}', '${escapeHtml(s.contact_note || "")}')">Ред</button>
-          <button onclick="deleteSupplier(${s.id})">Удал</button>
-        </div>
+      <div class="row-actions">
+        <button class="ghost-btn mini-btn" onclick='editSupplier(${s.id}, ${jsString(s.name)}, ${jsString(s.contact_note || "")})'>Ред</button>
+        <button class="ghost-btn mini-btn danger-btn" onclick="deleteSupplier(${s.id})">Удал</button>
       </div>
     `;
-    box.appendChild(div);
+    box.appendChild(row);
   });
 }
 
@@ -138,10 +136,6 @@ async function deleteSupplier(id) {
   await Promise.all([loadSuppliers(), loadProductFormSuppliers(), loadProducts()]);
 }
 
-/* =====================================================
-   CATEGORIES
-   ===================================================== */
-
 async function loadCategories() {
   const r = await API("/api/admin/categories");
   if (!r.ok) return console.warn("loadCategories:", r.error);
@@ -164,16 +158,17 @@ async function loadCategories() {
   if (!r.categories.length) sel.value = "__new";
 }
 
-/* =====================================================
-   PRODUCTS
-   ===================================================== */
-
 async function loadProducts() {
   const r = await API("/api/admin/products");
   if (!r.ok) return console.warn("loadProducts:", r.error);
 
   const box = document.getElementById("products");
   box.innerHTML = "";
+
+  if (!r.products?.length) {
+    box.innerHTML = `<div class="empty-state muted-text">Товаров пока нет</div>`;
+    return;
+  }
 
   const groups = {};
   r.products.forEach((p) => {
@@ -183,34 +178,32 @@ async function loadProducts() {
   });
 
   Object.entries(groups).forEach(([category, items]) => {
-    const wrap = document.createElement("div");
-    wrap.className = "card";
-    wrap.innerHTML = `
-      <div class="accordion-header" onclick="toggleAccordion(this)">
-        <span class="accordion-title"><span><b>${escapeHtml(category)}</b></span><small>${items.length} позиций</small></span>
-        <span class="arrow">▶</span>
-      </div>
-      <div class="accordion-body" style="display:none"></div>
-    `;
+    const group = document.createElement("section");
+    group.className = "group-block";
 
-    const body = wrap.querySelector(".accordion-body");
+    const head = document.createElement("div");
+    head.className = "group-title";
+    head.innerHTML = `<span>${escapeHtml(category)}</span><small>${items.length} позиций</small>`;
+    group.appendChild(head);
 
     items.forEach((p) => {
-      const block = document.createElement("div");
-      block.className = "card";
-      block.innerHTML = `
-        <div><b>${escapeHtml(p.name)}</b> (${escapeHtml(p.unit)})</div>
-        <div class="muted-text">Поставщик: ${escapeHtml(p.supplier_name)}</div>
-        <div class="actions-row">
-          <button onclick="editProduct(${p.id}, '${escapeHtml(p.name)}', '${escapeHtml(p.unit)}', '${escapeHtml(p.category)}', ${p.supplier_id})">Ред</button>
-          <button onclick="deleteProduct(${p.id})">Удал</button>
-          <button onclick="editAlt(${p.id})">Alt</button>
+      const row = document.createElement("div");
+      row.className = "list-row product-line";
+      row.innerHTML = `
+        <div class="row-main">
+          <div class="row-title">${escapeHtml(p.name)} <span class="inline-unit">${escapeHtml(p.unit)}</span></div>
+          <div class="row-sub">Поставщик: ${escapeHtml(p.supplier_name || "—")}</div>
+        </div>
+        <div class="row-actions">
+          <button class="ghost-btn mini-btn" onclick='editProduct(${p.id}, ${jsString(p.name)}, ${jsString(p.unit)}, ${jsString(p.category)}, ${Number(p.supplier_id || 0)})'>Ред</button>
+          <button class="ghost-btn mini-btn danger-btn" onclick="deleteProduct(${p.id})">Удал</button>
+          <button class="ghost-btn mini-btn" onclick="editAlt(${p.id})">Alt</button>
         </div>
       `;
-      body.appendChild(block);
+      group.appendChild(row);
     });
 
-    box.appendChild(wrap);
+    box.appendChild(group);
   });
 }
 
@@ -296,10 +289,6 @@ async function deleteProduct(id) {
   await Promise.all([loadProducts(), loadCategories()]);
 }
 
-/* =====================================================
-   ALT SUPPLIERS
-   ===================================================== */
-
 async function editAlt(productId) {
   const name = prompt("Введите НАЗВАНИЕ поставщика:");
   if (!name) return;
@@ -321,10 +310,6 @@ async function editAlt(productId) {
   alert(`Добавлен альтернативный поставщик: ${supplier.name}`);
 }
 
-/* =====================================================
-   OWNER REQUISITIONS
-   ===================================================== */
-
 async function loadOwnerRequisitions() {
   const r = await API("/api/admin/requisitions");
   if (!r.ok) return console.warn("loadOwnerRequisitions:", r.error);
@@ -333,19 +318,18 @@ async function loadOwnerRequisitions() {
   box.innerHTML = "";
 
   if (!r.requisitions?.length) {
-    box.innerHTML = `<div class="card empty-state muted-text">Заявок за последний месяц пока нет</div>`;
+    box.innerHTML = `<div class="empty-state muted-text">Заявок за последний месяц пока нет</div>`;
     return;
   }
 
   r.requisitions.forEach((reqItem) => {
-    const wrap = document.createElement("div");
-    wrap.className = "card requisition-card";
-
     const reqStatus = requisitionStatus(reqItem.orders);
+    const entry = document.createElement("div");
+    entry.className = "req-entry";
 
-    const supplierBlocks = reqItem.orders.map((order) => {
+    const supplierRows = reqItem.orders.map((order) => {
       const itemsHtml = order.items.map((it) => `
-        <div class="order-item">
+        <div class="item-line">
           <span>${escapeHtml(it.name)}</span>
           <span>${escapeHtml(it.qty)} ${escapeHtml(it.unit || "")}</span>
         </div>
@@ -354,47 +338,43 @@ async function loadOwnerRequisitions() {
       const canMarkOrdered = order.status === "pending";
 
       return `
-        <div class="supplier-order-card">
-          <div class="order-head">
-            <div>
-              <b>${escapeHtml(order.supplier_name)}</b>
-              <div class="muted-text">Поставщик ID: ${order.supplier_id}</div>
-            </div>
-            <div class="order-head-actions">
-              <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
-              <button class="mini-btn" ${canMarkOrdered ? "" : "disabled"} onclick="markOrdered(${order.order_id})">
-                ${canMarkOrdered ? "Заказал" : "Отмечено"}
-              </button>
-            </div>
+        <div class="supplier-line">
+          <div class="supplier-line-main">
+            <div class="row-title">${escapeHtml(order.supplier_name)}</div>
+            <div class="row-sub">Поставщик ID: ${escapeHtml(order.supplier_id)}</div>
           </div>
-          <div class="order-items-list">${itemsHtml}</div>
+          <div class="row-actions">
+            <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
+            <button class="ghost-btn mini-btn" ${canMarkOrdered ? "" : "disabled"} onclick="event.stopPropagation(); markOrdered(${order.order_id})">
+              ${canMarkOrdered ? "Заказал" : "Отмечено"}
+            </button>
+          </div>
         </div>
+        ${itemsHtml}
       `;
     }).join("");
 
-    wrap.innerHTML = `
-      <div class="accordion-header requisition-summary" onclick="toggleAccordion(this)">
+    entry.innerHTML = `
+      <button type="button" class="req-summary" onclick="toggleRequisition(this)">
         <div class="requisition-summary-main">
           <div class="requisition-title-row">
-            <b>Заявка #${reqItem.requisition_id}</b>
+            <span class="row-title">Заявка #${reqItem.requisition_id}</span>
             <span class="status-badge ${reqStatus}">${statusLabel(reqStatus)}</span>
           </div>
-          <div class="requisition-subline">
-            ${escapeHtml(reqItem.user_name || reqItem.user_id || "Сотрудник")} · ${escapeHtml(reqItem.created_at || "")}
-          </div>
+          <div class="requisition-subline">${escapeHtml(reqItem.user_name || reqItem.user_id || "Сотрудник")} · ${escapeHtml(reqItem.created_at || "")}</div>
         </div>
-        <span class="arrow">▶</span>
-      </div>
-      <div class="accordion-body" style="display:none">
+        <span class="expand-mark">+</span>
+      </button>
+      <div class="req-details hidden">
         <div class="meta-row">
           <span>Дата: ${escapeHtml(reqItem.created_at || "")}</span>
           <span>Поставщиков: ${reqItem.orders.length}</span>
         </div>
-        ${supplierBlocks}
+        ${supplierRows}
       </div>
     `;
 
-    box.appendChild(wrap);
+    box.appendChild(entry);
   });
 }
 
@@ -403,10 +383,6 @@ async function markOrdered(orderId) {
   if (!r.ok) return alert(r.error || "Не удалось отметить заказ");
   await loadOwnerRequisitions();
 }
-
-/* =====================================================
-   INIT
-   ===================================================== */
 
 loadSuppliers();
 loadCategories();
