@@ -1,8 +1,14 @@
+/* ============================================
+   ADMIN PANEL — FULL WORKING VERSION (FINAL)
+   ============================================ */
+
+/* === Telegram InitData === */
 function tg() {
-  return window.Telegram?.WebApp?.initData || "";
+  return (window.Telegram?.WebApp?.initData || "");
 }
 
-async function API(url, method = "GET", data = null) {
+/* === Unified API Wrapper with initData === */
+async function API(url, method = 'GET', data = null) {
   const r = await fetch(url, {
     method,
     headers: {
@@ -15,216 +21,187 @@ async function API(url, method = "GET", data = null) {
   return r.json().catch(() => ({ ok: false, error: "Invalid JSON" }));
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function jsString(value) {
-  return JSON.stringify(String(value ?? ""));
-}
-
-function statusLabel(status) {
-  if (status === "ordered") return "Принята";
-  if (status === "delivered") return "Приехала";
-  return "Новая";
-}
-
-function requisitionStatus(orders = []) {
-  if (!orders.length) return "pending";
-  if (orders.every((order) => order.status === "delivered")) return "delivered";
-  if (orders.some((order) => order.status === "ordered" || order.status === "delivered")) return "ordered";
-  return "pending";
-}
-
-function switchAdminTab(tab) {
-  const catalog = document.getElementById("page-catalog");
-  const requisitions = document.getElementById("page-requisitions");
-  const tabCatalog = document.getElementById("tab-catalog");
-  const tabRequisitions = document.getElementById("tab-requisitions");
-
-  const isCatalog = tab === "catalog";
-  catalog.classList.toggle("hidden", !isCatalog);
-  requisitions.classList.toggle("hidden", isCatalog);
-  tabCatalog.classList.toggle("active", isCatalog);
-  tabRequisitions.classList.toggle("active", !isCatalog);
-
-  if (!isCatalog) loadOwnerRequisitions();
-}
-
-function toggleRequisition(button) {
-  const entry = button.closest(".req-entry");
-  const details = entry?.querySelector(".req-details");
-  if (!entry || !details) return;
-
-  const isOpen = entry.classList.toggle("is-open");
-  details.classList.toggle("hidden", !isOpen);
-  button.setAttribute("aria-expanded", String(isOpen));
-}
-
-function formatShortDate(value) {
-  const date = new Date(String(value || "").replace(" ", "T"));
-  if (Number.isNaN(date.getTime())) return String(value || "");
-
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mi = String(date.getMinutes()).padStart(2, "0");
-  return `${dd}.${mm} · ${hh}:${mi}`;
-}
+/* =====================================================
+   SUPPLIERS
+   ===================================================== */
 
 async function loadSuppliers() {
-  const r = await API("/api/admin/suppliers");
+  const r = await API('/api/admin/suppliers');
   if (!r.ok) return console.warn("loadSuppliers:", r.error);
 
-  const box = document.getElementById("suppliers");
+  const box = document.getElementById('suppliers');
   box.innerHTML = "";
 
-  if (!r.suppliers?.length) {
-    box.innerHTML = `<div class="empty-state muted-text">Поставщиков пока нет</div>`;
-    return;
-  }
+  r.suppliers.forEach(s => {
+    const div = document.createElement("div");
+    div.className = "card";
 
-  r.suppliers.forEach((s) => {
-    const row = document.createElement("div");
-    row.className = "list-row supplier-row";
-    row.innerHTML = `
-      <div class="row-main">
-        <div class="row-title">${escapeHtml(s.name)}</div>
-        <div class="row-sub">${escapeHtml(s.contact_note || "Без заметки")}</div>
+    div.innerHTML = `
+      <div class="accordion-header" onclick="toggleAccordion(this)">
+        <span>${s.name} <span style="color:#888;font-size:11px;">(ID: ${s.id})</span></span>
+        <span class="arrow">▶</span>
       </div>
-      <div class="row-actions">
-        <button class="ghost-btn mini-btn" onclick='editSupplier(${s.id}, ${jsString(s.name)}, ${jsString(s.contact_note || "")})'>Ред</button>
-        <button class="ghost-btn mini-btn danger-btn" onclick="deleteSupplier(${s.id})">Удал</button>
+
+      <div class="accordion-body" style="display:none">
+        <div><b>Контакт:</b> ${s.contact_note || '—'}</div>
+
+        <div class="actions-row">
+          <button onclick="editSupplier(${s.id})">Ред</button>
+          <button onclick="deleteSupplier(${s.id})">Удал</button>
+        </div>
       </div>
     `;
-    box.appendChild(row);
+
+    box.appendChild(div);
   });
 }
 
 async function addSupplier() {
   const name = document.getElementById("sup-name").value.trim();
   const note = document.getElementById("sup-note").value.trim();
+
   if (!name) return alert("Введите название");
 
-  const r = await API("/api/admin/suppliers", "POST", {
+  const r = await API('/api/admin/suppliers', 'POST', {
     name,
     contact_note: note
   });
+
   if (!r.ok) return alert(r.error);
 
   document.getElementById("sup-name").value = "";
   document.getElementById("sup-note").value = "";
 
-  await Promise.all([loadSuppliers(), loadProductFormSuppliers()]);
+  loadSuppliers();
+  loadProductFormSuppliers();
 }
 
-async function editSupplier(id, currentName = "", currentNote = "") {
-  const name = prompt("Новое название:", currentName);
+async function editSupplier(id) {
+  const name = prompt("Новое название:");
   if (!name) return;
 
-  const note = prompt("Новая заметка:", currentNote);
-  const r = await API(`/api/admin/suppliers/${id}`, "PATCH", {
+  const note = prompt("Новая заметка:", "");
+
+  const r = await API(`/api/admin/suppliers/${id}`, 'PATCH', {
     name,
-    contact_note: note || ""
+    contact_note: note
   });
+
   if (!r.ok) return alert(r.error);
 
-  await Promise.all([loadSuppliers(), loadProductFormSuppliers()]);
+  loadSuppliers();
+  loadProductFormSuppliers();
 }
 
 async function deleteSupplier(id) {
   if (!confirm("Удалить поставщика?")) return;
 
-  const r = await API(`/api/admin/suppliers/${id}`, "DELETE");
+  const r = await API(`/api/admin/suppliers/${id}`, 'DELETE');
   if (!r.ok) return alert(r.error);
 
-  await Promise.all([loadSuppliers(), loadProductFormSuppliers(), loadProducts()]);
+  loadSuppliers();
+  loadProductFormSuppliers();
 }
 
+
+/* =====================================================
+   CATEGORIES
+   ===================================================== */
+
 async function loadCategories() {
-  const r = await API("/api/admin/categories");
-  if (!r.ok) return console.warn("loadCategories:", r.error);
+  const r = await API('/api/admin/categories');
+  if (!r.ok) {
+    console.warn("loadCategories:", r.error);
+    return;
+  }
 
   const sel = document.getElementById("prod-category");
   sel.innerHTML = "";
 
-  r.categories.forEach((cat) => {
+  // существующие категории
+  r.categories.forEach(cat => {
     const o = document.createElement("option");
     o.value = cat;
     o.textContent = cat;
     sel.appendChild(o);
   });
 
+  // пункт "новая категория"
   const o2 = document.createElement("option");
   o2.value = "__new";
   o2.textContent = "— новая категория —";
   sel.appendChild(o2);
 
-  if (!r.categories.length) sel.value = "__new";
+  // если категорий нет — сразу выбираем новую
+  if (!r.categories.length) {
+    sel.value = "__new";
+  }
 }
 
+
+/* =====================================================
+   PRODUCTS
+   ===================================================== */
+
 async function loadProducts() {
-  const r = await API("/api/admin/products");
+  const r = await API('/api/admin/products');
   if (!r.ok) return console.warn("loadProducts:", r.error);
 
-  const box = document.getElementById("products");
+  const box = document.getElementById('products');
   box.innerHTML = "";
 
-  if (!r.products?.length) {
-    box.innerHTML = `<div class="empty-state muted-text">Товаров пока нет</div>`;
-    return;
-  }
-
   const groups = {};
-  r.products.forEach((p) => {
-    const key = p.category || "Без категории";
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(p);
+  r.products.forEach(p => {
+    if (!groups[p.category]) groups[p.category] = [];
+    groups[p.category].push(p);
   });
 
   Object.entries(groups).forEach(([category, items]) => {
-    const group = document.createElement("section");
-    group.className = "group-block";
+    const wrap = document.createElement("div");
+    wrap.className = "card";
 
-    const head = document.createElement("div");
-    head.className = "group-title";
-    head.innerHTML = `<span>${escapeHtml(category)}</span><small>${items.length} позиций</small>`;
-    group.appendChild(head);
+    wrap.innerHTML = `
+      <div class="accordion-header" onclick="toggleAccordion(this)">
+        <span><b>${category}</b></span>
+        <span class="arrow">▶</span>
+      </div>
+      <div class="accordion-body" style="display:none"></div>
+    `;
 
-    items.forEach((p) => {
-      const row = document.createElement("div");
-      row.className = "list-row product-line";
-      row.innerHTML = `
-        <div class="row-main">
-          <div class="row-title">${escapeHtml(p.name)} <span class="inline-unit">${escapeHtml(p.unit)}</span></div>
-          <div class="row-sub">Поставщик: ${escapeHtml(p.supplier_name || "—")}</div>
+    const body = wrap.querySelector('.accordion-body');
+
+    items.forEach(p => {
+      const block = document.createElement("div");
+      block.className = "card";
+
+      block.innerHTML = `
+        <div><b>${p.name}</b> (${p.unit})</div>
+        <div style="font-size:12px;margin-top:4px;color:#999">
+          Поставщик: ${p.supplier_name}
         </div>
-        <div class="row-actions">
-          <button class="ghost-btn mini-btn" onclick='editProduct(${p.id}, ${jsString(p.name)}, ${jsString(p.unit)}, ${jsString(p.category)}, ${Number(p.supplier_id || 0)})'>Ред</button>
-          <button class="ghost-btn mini-btn danger-btn" onclick="deleteProduct(${p.id})">Удал</button>
-          <button class="ghost-btn mini-btn" onclick="editAlt(${p.id})">Alt</button>
+
+        <div class="actions-row">
+          <button onclick="editProduct(${p.id})">Ред</button>
+          <button onclick="deleteProduct(${p.id})">Удал</button>
+          <button onclick="editAlt(${p.id})">Alt</button>
         </div>
       `;
-      group.appendChild(row);
+
+      body.appendChild(block);
     });
 
-    box.appendChild(group);
+    box.appendChild(wrap);
   });
 }
 
 async function loadProductFormSuppliers() {
-  const r = await API("/api/admin/suppliers");
+  const r = await API('/api/admin/suppliers');
   if (!r.ok) return console.warn("loadProductFormSuppliers:", r.error);
 
   const sel = document.getElementById("prod-supplier");
   sel.innerHTML = "";
 
-  r.suppliers.forEach((s) => {
+  r.suppliers.forEach(s => {
     const o = document.createElement("option");
     o.value = s.id;
     o.textContent = s.name;
@@ -239,8 +216,13 @@ async function addProduct() {
   const category = (() => {
     const sel = document.getElementById("prod-category");
     const custom = document.getElementById("prod-category-new").value.trim();
+
+    // если введена новая категория → используй её
     if (custom) return custom;
+
+    // иначе выбери из списка
     if (sel && sel.value && sel.value !== "__new") return sel.value;
+
     return "";
   })();
 
@@ -251,161 +233,118 @@ async function addProduct() {
   if (!category) return alert("Категория обязательна");
   if (!supplier_id) return alert("Выберите поставщика");
 
-  const r = await API("/api/admin/products", "POST", {
+  const r = await API('/api/admin/products', 'POST', {
     name,
     unit,
     category,
     supplier_id
   });
+
   if (!r.ok) return alert(r.error);
 
   document.getElementById("prod-name").value = "";
   document.getElementById("prod-unit").value = "";
   document.getElementById("prod-category-new").value = "";
 
-  await Promise.all([loadProducts(), loadCategories()]);
+  loadProducts();
+  loadCategories();
 }
 
-async function editProduct(id, currentName = "", currentUnit = "", currentCategory = "", currentSupplierId = 0) {
-  const name = prompt("Название:", currentName);
+async function editProduct(id) {
+  const name = prompt("Название:");
   if (!name) return;
 
-  const unit = prompt("Ед. изм.:", currentUnit);
+  const unit = prompt("Ед. изм.:");
   if (!unit) return;
 
-  const category = prompt("Категория:", currentCategory);
+  const category = prompt("Категория:");
   if (!category) return;
 
-  const supplier = prompt("ID основного поставщика:", String(currentSupplierId || ""));
+  const supplier = prompt("ID основного поставщика:");
   if (!supplier) return;
 
-  const r = await API(`/api/admin/products/${id}`, "PATCH", {
+  const r = await API(`/api/admin/products/${id}`, 'PATCH', {
     name,
     unit,
     category,
     supplier_id: Number(supplier)
   });
+
   if (!r.ok) return alert(r.error);
 
-  await Promise.all([loadProducts(), loadCategories(), loadProductFormSuppliers()]);
+  loadProducts();
+  loadCategories();
+  loadProductFormSuppliers();
 }
 
 async function deleteProduct(id) {
   if (!confirm("Удалить товар?")) return;
 
-  const r = await API(`/api/admin/products/${id}`, "DELETE");
+  const r = await API(`/api/admin/products/${id}`, 'DELETE');
   if (!r.ok) return alert(r.error);
 
-  await Promise.all([loadProducts(), loadCategories()]);
+  loadProducts();
+  loadCategories();
 }
+
+/* =====================================================
+   ALT SUPPLIERS (NEW LOGIC)
+   ===================================================== */
 
 async function editAlt(productId) {
   const name = prompt("Введите НАЗВАНИЕ поставщика:");
+
   if (!name) return;
 
-  const suppliers = await API("/api/admin/suppliers");
+  // загружаем всех поставщиков
+  const suppliers = await API('/api/admin/suppliers');
   if (!suppliers.ok) return alert("Ошибка загрузки поставщиков");
 
+  // ищем по названию
   const supplier = suppliers.suppliers.find(
-    (s) => s.name.toLowerCase() === name.trim().toLowerCase()
+    s => s.name.toLowerCase() === name.trim().toLowerCase()
   );
 
-  if (!supplier) return alert("Поставщик не найден!");
+  if (!supplier) {
+    return alert("Поставщик не найден!");
+  }
 
-  const r = await API(`/api/admin/products/${productId}/alternatives`, "POST", {
+  // создаём альтернативу
+  const r = await API(`/api/admin/products/${productId}/alternatives`, 'POST', {
     supplier_id: supplier.id
   });
+
   if (!r.ok) return alert(r.error);
 
   alert(`Добавлен альтернативный поставщик: ${supplier.name}`);
 }
 
-async function loadOwnerRequisitions() {
-  const r = await API("/api/admin/requisitions");
-  if (!r.ok) return console.warn("loadOwnerRequisitions:", r.error);
 
-  const box = document.getElementById("requisitions");
-  box.innerHTML = "";
+/* =====================================================
+   ACCORDION (fixed)
+   ===================================================== */
 
-  if (!r.requisitions?.length) {
-    box.innerHTML = `<div class="empty-state muted-text">Заявок за последний месяц пока нет</div>`;
-    return;
+function toggleAccordion(el) {
+  if (!el.classList.contains("accordion-header")) return;
+
+  const body = el.nextElementSibling;
+  const arrow = el.querySelector('.arrow');
+
+  if (body.style.display === "none") {
+    body.style.display = "block";
+    arrow.textContent = "▼";
+  } else {
+    body.style.display = "none";
+    arrow.textContent = "▶";
   }
-
-  r.requisitions.forEach((reqItem) => {
-    const reqStatus = requisitionStatus(reqItem.orders);
-    const entry = document.createElement("div");
-    entry.className = `req-entry req-${reqStatus}`;
-
-    const supplierRows = reqItem.orders.map((order) => {
-      const itemsHtml = order.items.map((it) => `
-        <div class="item-line">
-          <span class="item-name">${escapeHtml(it.name)}</span>
-          <span class="item-qty">${escapeHtml(it.qty)} ${escapeHtml(it.unit || "")}</span>
-        </div>
-      `).join("");
-
-      const canMarkOrdered = order.status === "pending";
-
-      return `
-        <div class="supplier-block">
-          <div class="supplier-line">
-            <div class="supplier-line-main">
-              <div class="row-title">${escapeHtml(order.supplier_name)}</div>
-              <div class="row-sub">${order.items.length} позиций · поставщик #${escapeHtml(order.supplier_id)}</div>
-            </div>
-            <div class="row-actions supplier-actions">
-              <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
-              <button class="ghost-btn mini-btn" ${canMarkOrdered ? "" : "disabled"} onclick="event.stopPropagation(); markOrdered(${order.order_id})">
-                ${canMarkOrdered ? "Заказал" : "Отмечено"}
-              </button>
-            </div>
-          </div>
-          <div class="supplier-items">
-            ${itemsHtml}
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    entry.innerHTML = `
-      <button type="button" class="req-summary" aria-expanded="false" onclick="toggleRequisition(this)">
-        <div class="requisition-summary-main">
-          <div class="requisition-title-row compact-title-row">
-            <span class="row-title">Заявка #${reqItem.requisition_id}</span>
-            <span class="summary-user">${escapeHtml(reqItem.user_name || reqItem.user_id || "Сотрудник")}</span>
-          </div>
-          <div class="summary-meta-row">
-            <span class="summary-meta">${escapeHtml(formatShortDate(reqItem.created_at || ""))}</span>
-            <span class="summary-meta">${reqItem.orders.length} поставщика</span>
-          </div>
-        </div>
-        <div class="summary-right">
-          <span class="status-badge ${reqStatus}">${statusLabel(reqStatus)}</span>
-          <span class="expand-mark">⌄</span>
-        </div>
-      </button>
-      <div class="req-details hidden">
-        <div class="meta-row req-meta-row">
-          <span>Дата: ${escapeHtml(reqItem.created_at || "")}</span>
-          <span>Поставщиков: ${reqItem.orders.length}</span>
-        </div>
-        ${supplierRows}
-      </div>
-    `;
-
-    box.appendChild(entry);
-  });
 }
 
-async function markOrdered(orderId) {
-  const r = await API(`/api/admin/orders/${orderId}/ordered`, "POST");
-  if (!r.ok) return alert(r.error || "Не удалось отметить заказ");
-  await loadOwnerRequisitions();
-}
+
+/* =====================================================
+   INIT
+   ===================================================== */
 
 loadSuppliers();
 loadCategories();
 loadProductFormSuppliers();
 loadProducts();
-loadOwnerRequisitions();

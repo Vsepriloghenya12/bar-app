@@ -2,11 +2,16 @@
 
 const API_BASE = location.origin;
 
+// Универсальный запрос
 async function API(path, method = "GET", data = null) {
   const opts = { method, headers: {} };
-  const tg = window.Telegram?.WebApp;
 
-  if (tg?.initData) opts.headers["X-TG-INIT-DATA"] = tg.initData;
+  // Telegram initData
+  const tg = window.Telegram?.WebApp;
+  if (tg?.initData) {
+    opts.headers["X-TG-INIT-DATA"] = tg.initData;
+  }
+
   if (data) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(data);
@@ -16,31 +21,9 @@ async function API(path, method = "GET", data = null) {
   return await res.json().catch(() => ({}));
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function statusLabel(status) {
-  if (status === "ordered") return "Принята";
-  if (status === "delivered") return "Приехала";
-  return "Новая";
-}
-
-function formatShortDate(value) {
-  const date = new Date(String(value || "").replace(" ", "T"));
-  if (Number.isNaN(date.getTime())) return String(value || "");
-
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mi = String(date.getMinutes()).padStart(2, "0");
-  return `${dd}.${mm} · ${hh}:${mi}`;
-}
+/* -------------------------------------------------- */
+/* ЗАГРУЗКА ТОВАРОВ — ГРУППИРОВКА ПО КАТЕГОРИЯМ        */
+/* -------------------------------------------------- */
 
 function renderProductsByCategory(products) {
   const container = document.getElementById("category-list");
@@ -48,49 +31,62 @@ function renderProductsByCategory(products) {
 
   const map = new Map();
   for (const p of products) {
-    const key = p.category || "Без категории";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(p);
+    if (!map.has(p.category)) map.set(p.category, []);
+    map.get(p.category).push(p);
   }
 
   for (const [category, items] of map.entries()) {
-    const group = document.createElement("section");
-    group.className = "group-block";
+    const cat = document.createElement("div");
+    cat.className = "accordion";
 
-    const title = document.createElement("div");
-    title.className = "group-title";
-    title.innerHTML = `<span>${escapeHtml(category)}</span><small>${items.length} позиций</small>`;
-    group.appendChild(title);
+    const header = document.createElement("div");
+    header.className = "accordion-header";
+    header.innerHTML = `<span>${category}</span><span class="arrow">▶</span>`;
 
-    items.forEach((p) => {
+    const body = document.createElement("div");
+    body.className = "accordion-body";
+    body.style.display = "none";
+
+    header.onclick = () => {
+      const hidden = body.style.display === "none";
+      body.style.display = hidden ? "block" : "none";
+      header.querySelector(".arrow").textContent = hidden ? "▼" : "▶";
+    };
+
+    // товары внутри категории
+    items.forEach(p => {
       const row = document.createElement("div");
-      row.className = "list-row product-row";
+      row.className = "product-row";
       row.innerHTML = `
-        <div class="row-main">
-          <div class="row-title">${escapeHtml(p.name)}</div>
-          <div class="row-sub">${escapeHtml(p.unit)}</div>
-        </div>
+        <span>${p.name} <span class="unit">(${p.unit})</span></span>
         <input id="qty-${p.id}" type="number" min="0" placeholder="0" class="qty-input">
       `;
-      group.appendChild(row);
+      body.appendChild(row);
     });
 
-    container.appendChild(group);
+    cat.appendChild(header);
+    cat.appendChild(body);
+    container.appendChild(cat);
   }
 }
 
+// загрузка товаров
 function loadProducts() {
-  API("/api/products").then((r) => {
+  API("/api/products").then(r => {
     if (!r.ok) return alert("Ошибка загрузки товаров");
     renderProductsByCategory(r.products);
   });
 }
 
+/* -------------------------------------------------- */
+/* ОТПРАВКА ЗАЯВКИ                                    */
+/* -------------------------------------------------- */
+
 document.getElementById("send-btn").onclick = async () => {
   const qtyInputs = document.querySelectorAll("[id^='qty-']");
   const items = [];
 
-  qtyInputs.forEach((input) => {
+  qtyInputs.forEach(input => {
     const v = Number(input.value);
     if (v > 0) {
       const pid = Number(input.id.replace("qty-", ""));
@@ -98,96 +94,69 @@ document.getElementById("send-btn").onclick = async () => {
     }
   });
 
-  if (items.length === 0) return alert("Выберите хотя бы один товар");
+  if (items.length === 0)
+    return alert("Выберите хотя бы один товар");
 
   const r = await API("/api/requisitions", "POST", { items });
   if (!r.ok) return alert(r.error);
 
-  qtyInputs.forEach((input) => {
-    input.value = "";
-  });
-
-  alert(`Заявка #${r.requisition_id} отправлена!`);
+  alert("Заявка отправлена!");
   loadActiveOrders();
 };
 
-function renderActiveOrders(requisitions) {
+/* -------------------------------------------------- */
+/* АКТИВНЫЕ ЗАЯВКИ                                    */
+/* -------------------------------------------------- */
+
+function renderActiveOrders(data) {
   const container = document.getElementById("active-orders");
   container.innerHTML = "";
 
-  if (!requisitions || requisitions.length === 0) {
-    container.innerHTML = "<div class='empty-state muted-text'>Активных заявок нет</div>";
+  if (!data || data.length === 0) {
+    container.innerHTML = "<p class='muted'>Активных заявок нет</p>";
     return;
   }
 
-  requisitions.forEach((reqItem) => {
-    const entry = document.createElement("div");
-    entry.className = "req-entry is-open";
+  data.forEach(order => {
+    const block = document.createElement("div");
+    block.className = "order-block";
 
-    const supplierRows = reqItem.orders.map((order) => {
-      const itemsHtml = order.items.map((it) => `
-        <div class="item-line">
-          <span class="item-name">${escapeHtml(it.name)}</span>
-          <span class="item-qty">${escapeHtml(it.qty)} ${escapeHtml(it.unit || "")}</span>
-        </div>
-      `).join("");
-
-      const isDelivered = order.status === "delivered";
-
-      return `
-        <div class="supplier-block">
-          <div class="supplier-line">
-            <div class="supplier-line-main">
-              <div class="row-title">${escapeHtml(order.supplier_name)}</div>
-              <div class="row-sub">${order.items.length} позиций</div>
-            </div>
-            <div class="row-actions supplier-actions">
-              <span class="status-badge ${escapeHtml(order.status)}">${statusLabel(order.status)}</span>
-              <button class="ghost-btn mini-btn" ${isDelivered ? "disabled" : ""} onclick="markDelivered(${order.order_id})">
-                ${isDelivered ? "Получено" : "Отметить"}
-              </button>
-            </div>
-          </div>
-          <div class="supplier-items">
-            ${itemsHtml}
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    entry.innerHTML = `
-      <div class="req-summary static-summary compact-static-summary">
-        <div class="requisition-summary-main">
-          <div class="requisition-title-row compact-title-row">
-            <span class="row-title">Заявка #${reqItem.requisition_id}</span>
-            <span class="status-badge ${escapeHtml((reqItem.orders || []).every((o) => o.status === "delivered") ? "delivered" : (reqItem.orders || []).some((o) => o.status === "ordered" || o.status === "delivered") ? "ordered" : "pending")}">${statusLabel((reqItem.orders || []).every((o) => o.status === "delivered") ? "delivered" : (reqItem.orders || []).some((o) => o.status === "ordered" || o.status === "delivered") ? "ordered" : "pending")}</span>
-          </div>
-          <div class="summary-meta-row">
-            <span class="summary-meta">${escapeHtml(formatShortDate(reqItem.created_at || ""))}</span>
-            <span class="summary-meta">${reqItem.orders.length} поставщика</span>
-          </div>
-        </div>
-      </div>
-      <div class="req-details staff-open-details">
-        ${supplierRows}
+    block.innerHTML = `
+      <div class="order-head">
+        <b>${order.supplier_name}</b>
+        <button class="mini-btn" onclick="markDelivered(${order.supplier_id})">Получено</button>
       </div>
     `;
 
-    container.appendChild(entry);
+    order.items.forEach(it => {
+      const row = document.createElement("div");
+      row.className = "order-item";
+      row.innerHTML = `
+        <span>${it.name}</span>
+        <span>${it.qty} ${it.unit}</span>
+      `;
+      block.appendChild(row);
+    });
+
+    container.appendChild(block);
   });
 }
 
 async function loadActiveOrders() {
   const r = await API("/api/my-orders");
   if (!r.ok) return;
-  renderActiveOrders(r.requisitions);
+  renderActiveOrders(r.orders);
 }
 
-async function markDelivered(orderId) {
-  const r = await API(`/api/my-orders/${orderId}/delivered`, "POST");
-  if (!r.ok) return alert(r.error || "Не удалось отметить получение");
+async function markDelivered(supplier_id) {
+  const r = await API(`/api/my-orders/${supplier_id}/delivered`, "POST");
+  if (!r.ok) return alert(r.error);
   loadActiveOrders();
 }
+
+/* -------------------------------------------------- */
+/* СТАРТ                                              */
+/* -------------------------------------------------- */
 
 loadProducts();
 loadActiveOrders();

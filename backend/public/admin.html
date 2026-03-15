@@ -3,90 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Владелец — Заявки</title>
+  <title>Владелец — поставщики и товары</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-<body class="owner-theme anime-ui">
-  <div class="anime-wall owner-wall" aria-hidden="true">
-    <span class="anime-logo naruto"></span>
-    <span class="anime-logo bleach"></span>
-    <span class="anime-logo onepiece"></span>
-    <span class="anime-logo jjk"></span>
-    <span class="anime-logo demonslayer"></span>
-    <span class="anime-logo sailormoon"></span>
-    <span class="anime-logo aot"></span>
-    <span class="anime-logo dragonball"></span>
+<body class="page page-owner">
+  <div class="anime-bg" aria-hidden="true">
+    <img src="./anime/naruto.png" class="anime-figure owner-naruto" alt="">
+    <img src="./anime/ichigo.png" class="anime-figure owner-ichigo" alt="">
+    <img src="./anime/luffy.png" class="anime-figure owner-luffy" alt="">
   </div>
 
-  <div class="container app-shell">
-    <header class="topbar">
-      <div>
-        <div class="role-pill">owner</div>
-        <h1>Панель владельца</h1>
-      </div>
-    </header>
+  <div class="container">
+    <h1>Поставщики</h1>
 
-    <div class="tabs-row">
-      <button id="tab-catalog" class="tab-btn active" onclick="switchAdminTab('catalog')">Товары и поставщики</button>
-      <button id="tab-requisitions" class="tab-btn" onclick="switchAdminTab('requisitions')">Заявки сотрудников</button>
+    <div class="card">
+      <h3>Добавить поставщика</h3>
+      <input id="sup-name" placeholder="Название">
+      <input id="sup-note" placeholder="Контакты / заметка">
+      <button onclick="addSupplier()">Добавить</button>
     </div>
 
-    <section id="page-catalog" class="section-shell">
-      <div class="section-head">
-        <h2>Поставщики</h2>
-      </div>
+    <div id="suppliers"></div>
 
-      <div class="form-card form-stack">
-        <div class="field-grid">
-          <input id="sup-name" placeholder="Название поставщика">
-          <input id="sup-note" placeholder="Контакты / заметка">
-        </div>
-        <button onclick="addSupplier()">Добавить поставщика</button>
-      </div>
+    <hr>
 
-      <div id="suppliers" class="list-sheet"></div>
+    <h1>Товары</h1>
 
-      <div class="section-head section-gap">
-        <h2>Товары</h2>
-      </div>
+    <div class="card">
+      <h3>Добавить товар</h3>
 
-      <div class="form-card form-stack">
-        <div class="field-grid">
-          <input id="prod-name" placeholder="Название товара">
-          <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
-        </div>
+      <input id="prod-name" placeholder="Название товара">
+      <input id="prod-unit" placeholder="Ед. изм. (л, кг, шт)">
 
-        <div class="field-grid stacked-mobile">
-          <div>
-            <label>Категория</label>
-            <select id="prod-category"></select>
-          </div>
-          <div>
-            <label>Новая категория</label>
-            <input id="prod-category-new" placeholder="Если категории нет в списке">
-          </div>
-        </div>
+      <label>Категория:</label>
+      <select id="prod-category"></select>
+      <input id="prod-category-new" placeholder="Новая категория (если нет в списке)">
 
-        <div>
-          <label>Основной поставщик</label>
-          <select id="prod-supplier"></select>
-        </div>
+      <label>Основной поставщик:</label>
+      <select id="prod-supplier"></select>
 
-        <button onclick="addProduct()">Добавить товар</button>
-      </div>
+      <button onclick="addProduct()">Добавить товар</button>
+    </div>
 
-      <div id="products" class="list-sheet"></div>
-    </section>
-
-    <section id="page-requisitions" class="section-shell hidden">
-      <div class="section-head">
-        <h2>Заявки сотрудников</h2>
-        <button class="ghost-btn" onclick="loadOwnerRequisitions()">Обновить</button>
-      </div>
-
-      <div id="requisitions" class="list-sheet"></div>
-    </section>
+    <div id="products"></div>
   </div>
 
   <script src="./admin.js"></script>
