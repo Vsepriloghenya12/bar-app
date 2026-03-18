@@ -47,34 +47,58 @@ function renderProductsByCategory(products) {
   container.innerHTML = "";
 
   const map = new Map();
-  for (const p of products) {
-    const key = p.category || "Без категории";
+  for (const product of products) {
+    const key = product.category || "Без категории";
     if (!map.has(key)) map.set(key, []);
-    map.get(key).push(p);
+    map.get(key).push(product);
   }
 
-  for (const [category, items] of map.entries()) {
-    const group = document.createElement("section");
-    group.className = "group-block";
+  const sortedCategories = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "ru"));
 
-    const title = document.createElement("div");
-    title.className = "group-title";
-    title.innerHTML = `<span>${escapeHtml(category)}</span><small>${items.length} позиций</small>`;
+  for (const [category, items] of sortedCategories) {
+    items.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ru"));
+
+    const group = document.createElement("section");
+    group.className = "group-block category-group is-collapsed";
+
+    const title = document.createElement("button");
+    title.type = "button";
+    title.className = "group-title group-toggle";
+    title.setAttribute("aria-expanded", "false");
+    title.innerHTML = `
+      <span>${escapeHtml(category)}</span>
+      <span class="group-toggle-right">
+        <small>${items.length} позиций</small>
+        <span class="expand-mark">⌄</span>
+      </span>
+    `;
+
+    const itemsWrap = document.createElement("div");
+    itemsWrap.className = "group-items hidden";
+
+    title.addEventListener("click", () => {
+      const isOpen = group.classList.toggle("is-open");
+      group.classList.toggle("is-collapsed", !isOpen);
+      itemsWrap.classList.toggle("hidden", !isOpen);
+      title.setAttribute("aria-expanded", String(isOpen));
+    });
+
     group.appendChild(title);
 
-    items.forEach((p) => {
+    items.forEach((product) => {
       const row = document.createElement("div");
       row.className = "list-row product-row";
       row.innerHTML = `
         <div class="row-main">
-          <div class="row-title">${escapeHtml(p.name)}</div>
-          <div class="row-sub">${escapeHtml(p.unit)}</div>
+          <div class="row-title">${escapeHtml(product.name)}</div>
+          <div class="row-sub">${escapeHtml(product.unit)}</div>
         </div>
-        <input id="qty-${p.id}" type="number" min="0" placeholder="0" class="qty-input">
+        <input id="qty-${product.id}" type="number" min="0" placeholder="0" class="qty-input">
       `;
-      group.appendChild(row);
+      itemsWrap.appendChild(row);
     });
 
+    group.appendChild(itemsWrap);
     container.appendChild(group);
   }
 }
